@@ -1,0 +1,24 @@
+templates:
+  - id: 0
+    name: "plain_regression"
+    text: |
+      你是一名领域无关的时间序列分析师。给定过去{L}个采样点的数值，以及最近的新闻要点，
+      预测接下来{H}步的数值（单位：{UNIT}）。仅输出逗号分隔的{H}个数字。
+      历史:
+      {HISTORY}
+      新闻:
+      {NEWS}
+      <PRED>
+    has_explain: 0
+  - id: 1
+    name: "with_reasoning"
+    text: |
+      角色：你是资深的跨领域预报专家。请先简要思考新闻与序列的关系，再给出预测。
+      历史序列（最近{L}步）：
+      {HISTORY}
+      新闻要点（按重要性排序）：
+      {NEWS}
+      要求：输出{H}个预测数值，逗号分隔。无需单位。
+      解释（最多两句）后给出答案。
+      <PRED>
+    has_explain: 1

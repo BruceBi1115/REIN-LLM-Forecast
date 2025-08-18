@@ -1,0 +1,7 @@
+outage
+maintenance
+capacity
+generation
+demand
+fuel
+pipeline
