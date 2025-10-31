@@ -1,5 +1,5 @@
 {
-  "openai_api_key": "",
+  "openai_api_key": "test",
   "model": "gpt-4o-mini",
   "prompts": {
     "generate_keywords": "You are analyzing a dataset: {description}. Step 1: Think about what types of real-world news events would directly influence the dataset’s values (e.g., policy changes, market dynamics, environmental conditions, major incidents). Step 2: From these possible news drivers, extract the top {number} concise keywords that capture the most likely impactful themes. Step 3: Output only the keywords, one word per line, without explanation or numbering.",
