@@ -28,8 +28,11 @@ def format_news(news_rows, text_col: str, budget_tokens: int, tokenizer, summary
         text = '\n'.join(bullets)
     return text
 
-def build_prompt(template_text: str, L: int, H: int, unit: str,
-                 history_str: str, news_str: str) -> str:
+def build_prompt(template_text: str, L: int, H: int, unit: str, description: str,
+                 history_str: str, news_str: str, value_col, freq, start_date, end_date, pred_start, pred_end) -> str:
     prompt = template_text.replace('{L}', str(L)).replace('{H}', str(H)).replace('{UNIT}', unit)
-    prompt = prompt.replace('{HISTORY}', history_str).replace('{NEWS}', news_str)
+    prompt = prompt.replace('{HISTORY}', history_str) \
+    .replace('{NEWS}', news_str).replace('{value_col}', value_col) \
+    .replace('{freq}', str(freq)).replace('{start_date}', start_date).replace('{end_date}', end_date)\
+    .replace('{pred_start}', pred_start).replace('{pred_end}', pred_end).replace("{description}", description)
     return prompt

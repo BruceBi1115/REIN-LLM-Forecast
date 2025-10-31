@@ -1,24 +1,121 @@
 templates:
   - id: 0
-    name: "plain_regression"
+    name: "Inlined_cot_decomp_breath"
     text: |
-      你是一名领域无关的时间序列分析师。给定过去{L}个采样点的数值，以及最近的新闻要点，
-      预测接下来{H}步的数值（单位：{UNIT}）。仅输出逗号分隔的{H}个数字。
-      历史:
-      {HISTORY}
-      新闻:
-      {NEWS}
-      <PRED>
-    has_explain: 0
+      Now you have a dataset with description: {description}
+      You are a domain-agnostic time series analyst. The historical {value_col} data is: {HISTORY}
+      The start date of the historical data is {start_date}. The end date of the historical data is {end_date}. The data is sampled every {freq} minutes.
+      
+      The news can influence the time series forecasting as follows: {NEWS}
+      Please follow these instructions step-by-step:
+
+      1. Perform a detailed analysis of the historical trend:
+        - Patterns observed (increase, decrease, periodicity, spikes, etc.).
+        - Potential impact of the weekday, holidays, or provided news events on future.
+        - Explain how this reasoning informs your prediction.
+
+      2. Decompose the prediction task:
+        - Short-term forecast: focus on trend changes and dynamic fluctuations.
+        - Long-term forecast: focus on statistical properties and periodic/seasonal patterns.
+
+      3. Based on the historical data and news texts (if given), predict the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
+
+      Take a deep breath and reassess your forecasting strategy every {breath_freq} steps.
+
+    has_example: false
+    has_breath: true
+    has_decomp: true
+    has_self_consistency: true
+    n_paths: 5
+    breath_freq: 5
+
+
   - id: 1
-    name: "with_reasoning"
+    name: "Inlined_cot_simple"
     text: |
-      角色：你是资深的跨领域预报专家。请先简要思考新闻与序列的关系，再给出预测。
-      历史序列（最近{L}步）：
-      {HISTORY}
-      新闻要点（按重要性排序）：
-      {NEWS}
-      要求：输出{H}个预测数值，逗号分隔。无需单位。
-      解释（最多两句）后给出答案。
-      <PRED>
-    has_explain: 1
+      Now you have a dataset with description: {description}
+      You are a domain-agnostic time series analyst. The historical {value_col} is: {HISTORY}
+      The start date of the historical data is {start_date}. The end date of the historical data is {end_date}. The data is sampled every {freq} minutes.
+      
+      The news can influence the time series forecasting as follows: {NEWS}
+
+      Please reason step by step and then predict the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
+
+      Take a deep breath and reassess your forecasting strategy every {breath_freq} steps.
+
+    has_example: false
+    has_breath: true
+    has_decomp: false
+    has_self_consistency: false
+    n_paths: 1
+    breath_freq: 5
+
+
+  - id: 2
+    name: "Inlined_cot_with_example"
+    text: |
+      Now you have a dataset with description: {description}
+      You are a domain-agnostic time series analyst. The historical {value_col} is: {HISTORY}
+      The start date of the historical data is {start_date}. The end date of the historical data is {end_date}. The data is sampled every {freq} minutes.
+
+      Here is an example prediction for a similar dataset:
+      {EXAMPLE}
+
+      The news can influence the time series forecasting as follows: {NEWS}
+
+      Please reason step by step and predict the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
+
+      Take a deep breath and reassess your forecasting strategy every {breath_freq} steps.
+
+    has_example: true
+    has_breath: true
+    has_decomp: false
+    has_self_consistency: false
+    n_paths: 1
+    breath_freq: 5
+
+
+  - id: 3
+    name: "Inlined_cot_self_consistency"
+    text: |
+      Now you have a dataset with description: {description}
+      You are a domain-agnostic time series analyst. The historical {value_col} is: {HISTORY}
+      The start date of the historical data is {start_date}. The end date of the historical data is {end_date}. The data is sampled every {freq} minutes.
+
+      The news can influence the time series forecasting as follows: {NEWS}
+
+      Please generate at least {n_paths} diverse step-by-step reasoning paths for forecasting the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
+      Then summarize the most consistent prediction across these paths.
+
+      Take a deep breath and reassess your forecasting strategy every {breath_freq} steps.
+
+    has_example: false
+    has_breath: true
+    has_decomp: false
+    has_self_consistency: true
+    n_paths: 5
+    breath_freq: 5
+  
+
+  - id: 4
+    name: "Inlined_cot_uncertainty"
+    text: |
+      Now you have a dataset with description: {description}
+      You are a forecasting assistant. The historical {value_col} is: {HISTORY}
+      From {start_date} to {end_date}, sampled every {freq} minutes.
+
+      The news that may influence the forecast: {NEWS}
+
+      Please reason step by step and then:
+      1. Provide your main forecast for the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
+      2. Indicate an uncertainty range (lower and upper bounds) around the forecast.
+      3. Explain which factors contribute to this uncertainty.
+
+      Take a deep breath and reassess every {breath_freq} steps.
+
+    has_example: false
+    has_breath: true
+    has_decomp: false
+    has_self_consistency: false
+    n_paths: 1
+    breath_freq: 5

@@ -1,0 +1,1 @@
+python split.py dataset/2018-2020NSWelecprice/2018To2020NSWData.csv 767 110 219 --no-shuffle

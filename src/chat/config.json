@@ -1,0 +1,9 @@
+{
+  "openai_api_key": "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",
+  "model": "gpt-4o-mini",
+  "prompts": {
+    "generate_keywords": "You are analyzing a dataset: {description}. Step 1: Think about what types of real-world news events would directly influence the dataset’s values (e.g., policy changes, market dynamics, environmental conditions, major incidents). Step 2: From these possible news drivers, extract the top {number} concise keywords that capture the most likely impactful themes. Step 3: Output only the keywords, one word per line, without explanation or numbering.",
+    "news": "introduce Australia in {number} words{question}",
+    "C": "{number}公斤等于多少克?"
+  }
+}

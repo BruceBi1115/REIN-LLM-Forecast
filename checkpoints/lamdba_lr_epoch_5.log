@@ -1,0 +1,60 @@
+2025-09-12 14:09:53 | DECISION_EPOCH_BEGIN epoch=1 sel_template=4 policy=keyword_sentiment_hybrid tpl_scores=[-5.1701, 5.3306, -3.6349, -4.7649, 7.5902] pol_scores=[0.9842]
+2025-09-12 14:11:04 | EVAL   epoch=1 batch=76 step=77 val_metric_mae=43.6547 reward_raw=-2242.5346 model_loss=2242.534632 reward_norm=0.0000 avg_tok_len=667.0 topK=5 best=inf
+2025-09-12 14:12:18 | EVAL   epoch=1 batch=153 step=154 val_metric_mae=39.4947 reward_raw=355.2349 model_loss=1887.299739 reward_norm=0.3000 avg_tok_len=865.0 topK=5 best=2242.5346
+2025-09-12 14:13:32 | EVAL   epoch=1 batch=230 step=231 val_metric_mae=29.1085 reward_raw=742.7734 model_loss=1144.526316 reward_norm=0.4645 avg_tok_len=656.0 topK=5 best=1887.2997
+2025-09-12 14:14:46 | EVAL   epoch=1 batch=307 step=308 val_metric_mae=21.0032 reward_raw=438.8954 model_loss=705.630958 reward_norm=0.4788 avg_tok_len=845.0 topK=5 best=1144.5263
+2025-09-12 14:15:43 | DECISION_EPOCH_BEGIN epoch=2 sel_template=1 policy=keyword_sentiment_hybrid tpl_scores=[-3.9699, 1.4493, -3.6295, -1.9886, -0.3201] pol_scores=[-0.1948]
+2025-09-12 14:15:56 | EVAL   epoch=2 batch=1 step=385 val_metric_mae=14.3561 reward_raw=265.7508 model_loss=439.880126 reward_norm=0.4326 avg_tok_len=590.0 topK=5 best=705.6310
+2025-09-12 14:17:07 | EVAL   epoch=2 batch=78 step=462 val_metric_mae=10.8483 reward_raw=104.9265 model_loss=334.953612 reward_norm=0.3512 avg_tok_len=854.0 topK=5 best=439.8801
+2025-09-12 14:18:20 | EVAL   epoch=2 batch=155 step=539 val_metric_mae=10.4334 reward_raw=39.4720 model_loss=295.481659 reward_norm=0.2724 avg_tok_len=910.0 topK=5 best=334.9536
+2025-09-12 14:19:33 | EVAL   epoch=2 batch=232 step=616 val_metric_mae=14.1298 reward_raw=-73.7703 model_loss=369.252007 reward_norm=0.1811 avg_tok_len=671.0 topK=5 best=295.4817
+2025-09-12 14:20:46 | EVAL   epoch=2 batch=309 step=693 val_metric_mae=18.7633 reward_raw=-147.6077 model_loss=516.859702 reward_norm=0.0936 avg_tok_len=848.0 topK=5 best=295.4817
+2025-09-12 14:21:41 | DECISION_EPOCH_BEGIN epoch=3 sel_template=4 policy=keyword_sentiment_hybrid tpl_scores=[-6.0751, -0.3779, -4.6542, -5.7068, 0.0902] pol_scores=[0.2222]
+2025-09-12 14:21:56 | EVAL   epoch=3 batch=3 step=770 val_metric_mae=22.6093 reward_raw=-152.1464 model_loss=669.006077 reward_norm=0.0324 avg_tok_len=729.0 topK=5 best=295.4817
+2025-09-12 14:23:08 | EVAL   epoch=3 batch=80 step=847 val_metric_mae=24.9251 reward_raw=-106.6633 model_loss=775.669336 reward_norm=0.0080 avg_tok_len=690.0 topK=5 best=295.4817
+2025-09-12 14:24:22 | EVAL   epoch=3 batch=157 step=924 val_metric_mae=28.2050 reward_raw=-176.1012 model_loss=951.770584 reward_norm=-0.0355 avg_tok_len=849.0 topK=5 best=295.4817
+2025-09-12 14:25:34 | EVAL   epoch=3 batch=234 step=1001 val_metric_mae=31.8333 reward_raw=-227.1599 model_loss=1178.930461 reward_norm=-0.0850 avg_tok_len=677.0 topK=5 best=295.4817
+2025-09-12 14:26:49 | EVAL   epoch=3 batch=311 step=1078 val_metric_mae=34.3723 reward_raw=-178.4977 model_loss=1357.428148 reward_norm=-0.0968 avg_tok_len=475.0 topK=5 best=295.4817
+2025-09-12 14:27:43 | DECISION_EPOCH_BEGIN epoch=4 sel_template=0 policy=keyword_sentiment_hybrid tpl_scores=[3.0563, 0.5793, -4.4825, 1.5232, 0.6273] pol_scores=[0.313]
+2025-09-12 14:28:02 | EVAL   epoch=4 batch=5 step=1155 val_metric_mae=35.5065 reward_raw=-86.0498 model_loss=1443.477914 reward_norm=-0.0629 avg_tok_len=711.0 topK=5 best=295.4817
+2025-09-12 14:29:26 | EVAL   epoch=4 batch=82 step=1232 val_metric_mae=34.4290 reward_raw=61.9220 model_loss=1381.555894 reward_norm=0.0283 avg_tok_len=980.0 topK=5 best=295.4817
+2025-09-12 14:30:50 | EVAL   epoch=4 batch=159 step=1309 val_metric_mae=35.2667 reward_raw=-70.6861 model_loss=1452.241998 reward_norm=0.0272 avg_tok_len=886.0 topK=5 best=295.4817
+2025-09-12 14:32:14 | EVAL   epoch=4 batch=236 step=1386 val_metric_mae=37.4173 reward_raw=-166.2833 model_loss=1618.525257 reward_norm=-0.0204 avg_tok_len=733.0 topK=5 best=295.4817
+2025-09-12 14:33:39 | EVAL   epoch=4 batch=313 step=1463 val_metric_mae=37.6894 reward_raw=-25.4709 model_loss=1643.996200 reward_norm=0.0181 avg_tok_len=579.0 topK=5 best=295.4817
+2025-09-12 14:34:40 | DECISION_EPOCH_BEGIN epoch=5 sel_template=3 policy=keyword_sentiment_hybrid tpl_scores=[0.119, -0.1849, -1.2333, 2.7113, -0.2081] pol_scores=[0.0407]
+2025-09-12 14:34:58 | EVAL   epoch=5 batch=7 step=1540 val_metric_mae=38.5825 reward_raw=-84.2126 model_loss=1728.208752 reward_norm=0.0139 avg_tok_len=863.0 topK=5 best=295.4817
+2025-09-12 14:36:11 | EVAL   epoch=5 batch=84 step=1617 val_metric_mae=35.4438 reward_raw=216.8717 model_loss=1511.337077 reward_norm=0.1699 avg_tok_len=672.0 topK=5 best=295.4817
+2025-09-12 14:37:25 | EVAL   epoch=5 batch=161 step=1694 val_metric_mae=37.6735 reward_raw=-178.4611 model_loss=1689.798197 reward_norm=0.0613 avg_tok_len=487.0 topK=5 best=295.4817
+2025-09-12 14:38:38 | EVAL   epoch=5 batch=238 step=1771 val_metric_mae=39.4179 reward_raw=-126.5814 model_loss=1816.379584 reward_norm=0.0153 avg_tok_len=641.0 topK=5 best=295.4817
+2025-09-12 14:39:53 | EVAL   epoch=5 batch=315 step=1848 val_metric_mae=38.9713 reward_raw=45.5218 model_loss=1770.857765 reward_norm=0.0813 avg_tok_len=487.0 topK=5 best=295.4817
+2025-09-12 14:40:46 | DECISION_EPOCH_BEGIN epoch=6 sel_template=2 policy=keyword_sentiment_hybrid tpl_scores=[0.1079, -0.0605, 6.8594, -0.0734, 0.141] pol_scores=[-0.2473]
+2025-09-12 14:41:06 | EVAL   epoch=6 batch=9 step=1925 val_metric_mae=40.5522 reward_raw=-149.3770 model_loss=1920.234730 reward_norm=0.0131 avg_tok_len=862.5 topK=5 best=295.4817
+2025-09-12 14:42:18 | EVAL   epoch=6 batch=86 step=2002 val_metric_mae=36.5291 reward_raw=294.9967 model_loss=1625.238003 reward_norm=0.2268 avg_tok_len=481.0 topK=5 best=295.4817
+2025-09-12 14:43:32 | EVAL   epoch=6 batch=163 step=2079 val_metric_mae=37.2056 reward_raw=-57.8270 model_loss=1683.064998 reward_norm=0.1615 avg_tok_len=481.0 topK=5 best=295.4817
+2025-09-12 14:44:45 | EVAL   epoch=6 batch=240 step=2156 val_metric_mae=40.4846 reward_raw=-252.7994 model_loss=1935.864441 reward_norm=-0.0026 avg_tok_len=648.0 topK=5 best=295.4817
+2025-09-12 14:45:59 | EVAL   epoch=6 batch=317 step=2233 val_metric_mae=40.2334 reward_raw=37.4433 model_loss=1898.421190 reward_norm=0.0641 avg_tok_len=481.0 topK=5 best=295.4817
+2025-09-12 14:46:51 | DECISION_EPOCH_BEGIN epoch=7 sel_template=2 policy=keyword_sentiment_hybrid tpl_scores=[0.1841, 0.4, 0.5845, -0.0381, -0.1041] pol_scores=[0.0089]
+2025-09-12 14:47:13 | EVAL   epoch=7 batch=11 step=2310 val_metric_mae=41.4404 reward_raw=-113.0861 model_loss=2011.507326 reward_norm=0.0149 avg_tok_len=816.0 topK=5 best=295.4817
+2025-09-12 14:48:24 | EVAL   epoch=7 batch=88 step=2387 val_metric_mae=39.4486 reward_raw=146.9117 model_loss=1864.595660 reward_norm=0.1470 avg_tok_len=835.0 topK=5 best=295.4817
+2025-09-12 14:49:37 | EVAL   epoch=7 batch=165 step=2464 val_metric_mae=39.3362 reward_raw=0.8330 model_loss=1863.762637 reward_norm=0.1425 avg_tok_len=481.0 topK=5 best=295.4817
+2025-09-12 14:50:51 | EVAL   epoch=7 batch=242 step=2541 val_metric_mae=41.0868 reward_raw=-141.6877 model_loss=2005.450347 reward_norm=0.0447 avg_tok_len=648.0 topK=5 best=295.4817
+2025-09-12 14:52:05 | EVAL   epoch=7 batch=319 step=2618 val_metric_mae=41.3222 reward_raw=-15.7911 model_loss=2021.241442 reward_norm=0.0614 avg_tok_len=708.0 topK=5 best=295.4817
+2025-09-12 14:52:56 | DECISION_EPOCH_BEGIN epoch=8 sel_template=1 policy=keyword_sentiment_hybrid tpl_scores=[0.0582, 0.5001, -0.4769, -0.0687, 0.0193] pol_scores=[0.3376]
+2025-09-12 14:53:19 | EVAL   epoch=8 batch=13 step=2695 val_metric_mae=41.3128 reward_raw=-2.5264 model_loss=2023.767843 reward_norm=0.0817 avg_tok_len=804.0 topK=5 best=295.4817
+2025-09-12 14:54:30 | EVAL   epoch=8 batch=90 step=2772 val_metric_mae=40.6954 reward_raw=37.7863 model_loss=1985.981556 reward_norm=0.1232 avg_tok_len=834.5 topK=5 best=295.4817
+2025-09-12 14:55:41 | EVAL   epoch=8 batch=167 step=2849 val_metric_mae=40.5365 reward_raw=6.5166 model_loss=1979.464988 reward_norm=0.1294 avg_tok_len=656.0 topK=5 best=295.4817
+2025-09-12 14:56:54 | EVAL   epoch=8 batch=244 step=2926 val_metric_mae=40.9926 reward_raw=-36.4220 model_loss=2015.886992 reward_norm=0.1027 avg_tok_len=864.0 topK=5 best=295.4817
+2025-09-12 14:58:06 | EVAL   epoch=8 batch=321 step=3003 val_metric_mae=41.3553 reward_raw=-28.9367 model_loss=2044.823651 reward_norm=0.0892 avg_tok_len=791.0 topK=5 best=295.4817
+2025-09-12 14:58:54 | DECISION_EPOCH_BEGIN epoch=9 sel_template=3 policy=keyword_sentiment_hybrid tpl_scores=[-0.079, 0.3696, 0.0273, 0.4055, -0.6857] pol_scores=[-0.0713]
+2025-09-12 14:59:19 | EVAL   epoch=9 batch=15 step=3080 val_metric_mae=41.3259 reward_raw=0.3640 model_loss=2044.459617 reward_norm=0.1010 avg_tok_len=785.0 topK=5 best=295.4817
+2025-09-12 15:00:31 | EVAL   epoch=9 batch=92 step=3157 val_metric_mae=40.6859 reward_raw=44.6598 model_loss=1999.799818 reward_norm=0.1414 avg_tok_len=833.0 topK=5 best=295.4817
+2025-09-12 15:01:44 | EVAL   epoch=9 batch=169 step=3234 val_metric_mae=40.5293 reward_raw=8.0657 model_loss=1991.734160 reward_norm=0.1414 avg_tok_len=861.0 topK=5 best=295.4817
+2025-09-12 15:02:59 | EVAL   epoch=9 batch=246 step=3311 val_metric_mae=40.9265 reward_raw=-30.1830 model_loss=2021.917205 reward_norm=0.1120 avg_tok_len=882.0 topK=5 best=295.4817
+2025-09-12 15:04:13 | EVAL   epoch=9 batch=323 step=3388 val_metric_mae=41.2410 reward_raw=-23.4120 model_loss=2045.329242 reward_norm=0.0965 avg_tok_len=884.0 topK=5 best=295.4817
+2025-09-12 15:05:00 | DECISION_EPOCH_BEGIN epoch=10 sel_template=4 policy=keyword_sentiment_hybrid tpl_scores=[0.1235, 0.228, 0.3178, 0.2038, 0.8575] pol_scores=[0.0695]
+2025-09-12 15:05:27 | EVAL   epoch=10 batch=17 step=3465 val_metric_mae=41.2242 reward_raw=0.8209 model_loss=2044.508387 reward_norm=0.1042 avg_tok_len=699.5 topK=5 best=295.4817
+2025-09-12 15:06:39 | EVAL   epoch=10 batch=94 step=3542 val_metric_mae=40.7970 reward_raw=29.6139 model_loss=2014.894509 reward_norm=0.1317 avg_tok_len=790.5 topK=5 best=295.4817
+2025-09-12 15:07:50 | EVAL   epoch=10 batch=171 step=3619 val_metric_mae=40.6370 reward_raw=12.0702 model_loss=2002.824287 reward_norm=0.1364 avg_tok_len=475.0 topK=5 best=295.4817
+2025-09-12 15:09:04 | EVAL   epoch=10 batch=248 step=3696 val_metric_mae=41.0008 reward_raw=-28.2686 model_loss=2031.092866 reward_norm=0.1070 avg_tok_len=884.0 topK=5 best=295.4817
+2025-09-12 15:10:18 | EVAL   epoch=10 batch=325 step=3773 val_metric_mae=41.1367 reward_raw=-9.8374 model_loss=2040.930296 reward_norm=0.1012 avg_tok_len=783.0 topK=5 best=295.4817
+2025-09-12 15:11:02 | DECISION_EPOCH_BEGIN epoch=11 sel_template=4 policy=keyword_sentiment_hybrid tpl_scores=[-0.4046, -0.2743, -0.0906, -0.5766, 0.198] pol_scores=[0.0578]

@@ -1,0 +1,25 @@
+python run.py \
+    --time_col 'SETTLEMENTDATE'\
+    --value_col 'RRP'\
+    --unit "$/MWh" \
+    --description "This dataset records the electricity price data in Australia NSW from 2015 to 2020, collected from National electricity market." \
+    --region "Australia, NSW"\
+    --news_path dataset/Summarized_news_2015_2020.json \
+    --dayFirst True \
+    --train_file dataset/2015-2020NSWelecprice/2015To2020NSWData_trainset.csv \
+    --val_file dataset/2015-2020NSWelecprice/2015To2020NSWData_valset.csv \
+    --test_file dataset/2015-2020NSWelecprice/2015To2020NSWData_testset.csv \
+    --news_text_col 'summary_response' \
+    --news_time_col 'date' \
+    --keyword_path 'keywords/kws.txt' \
+    --keyword_number 20 \
+    --news_window_days 7 \
+    --news_policy 'keywords' \
+    --rl_algo "lints" \
+    --batch_size 2\
+    --reward_from_val_loss True \
+    --rl_val_probe_frac 0.5 \
+    --rl_cycle_steps 1\
+    --epochs 10\
+    --select_policy_by "epoch" \
+    --volatility_bin_tiers 100
