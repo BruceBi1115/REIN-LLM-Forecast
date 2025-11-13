@@ -224,7 +224,6 @@ def _load_keywords(path: str) -> List[str]:
             return [w.strip().lower() for w in f if w.strip()]
     except FileNotFoundError:
         return []
-    return cand.head(K)
 
 def policy_by_keywords(cand: pd.DataFrame, text_col: str, keywords: List[str], K: int) -> pd.DataFrame:
     if not keywords:
@@ -277,20 +276,6 @@ def select_news(cand: pd.DataFrame, policy: str, text_col: str,
         return select_by_sentiment(cand, text_col, K)
     if policy == 'keyword_sentiment_hybrid':
         return keyword_sentiment_hybrid(cand, text_col, policy_kw, K)
-    
-    # 新增：无关键词策略
-    if policy in ("dense_retrieval", "mmr", "hybrid_alpha"):
-        if encoder is None:
-            encoder = NewsEncoder(backend="auto").build(cand[text_col].fillna("").astype(str).tolist())
-        return _select_news_semantic(policy, cand, text_col, K, encoder,
-                                     query_text=query_text or "",
-                                     now_ts=now_ts, region=region,
-                                     alpha=kwargs.get("alpha", 0.7),
-                                     beta=kwargs.get("beta", 0.2),
-                                     gamma=kwargs.get("gamma", 0.1),
-                                     lam=kwargs.get("lam", 0.7),
-                                     tz=kwargs.get("tz", None),
-                                     time_col=time_col)
     
     return cand
 

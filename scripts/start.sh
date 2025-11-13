@@ -5,7 +5,6 @@ python run.py \
     --description "This dataset records the electricity price data in Australia NSW from 2015 to 2024, collected from National electricity market." \
     --region "Australia, NSW"\
     --news_path dataset/Summarized_news_2024_2025.json \
-    --dayFirst True \
     --train_file dataset/2024NSWelecprice/2024NSWelecprice_trainset.csv \
     --val_file dataset/2024NSWelecprice/2024NSWelecprice_valset.csv \
     --test_file dataset/2024NSWelecprice/2024NSWelecprice_testset.csv \

@@ -21,39 +21,11 @@ from logging.handlers import WatchedFileHandler
 from torch.optim.lr_scheduler import LambdaLR
 from transformers import get_cosine_schedule_with_warmup
 import math
+from .utils.logger import setup_live_logger
+from .data_construction.probation import prepare_val_probe_by_frac, prepare_val_probe_by_number, evaluate_probe
+from .RL.features import compute_time_series_context_from_batch, compute_news_density_context, encode_instruction
 
 METRIC_FN = {'rmse': rmse, 'mae': mae, 'smape': smape}
-
-def setup_live_logger(save_dir: str, filename: str = "bandit_live.log", reset = True):
-    """
-    单文件动态日志（人类可读）。支持 tail -f。
-    也可同时打开一个 JSONL 附带日志，便于后续 pandas 分析（可选）。
-    """
-    os.makedirs(save_dir, exist_ok=True)
-    log_path = os.path.join(save_dir, filename)
-
-    logger = logging.getLogger("bandit_live")
-    logger.setLevel(logging.INFO)
-    logger.handlers.clear()
-
-    if reset:
-        # 以 'w' 打开并立即关闭 -> 清空文件
-        open(log_path, "w", encoding="utf-8").close()
-
-    # 用 WatchedFileHandler 便于 logrotate、tail -f 等
-    fh = WatchedFileHandler(log_path, encoding="utf-8")
-    fmt = logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    fh.setFormatter(fmt)
-    logger.addHandler(fh)
-    logger.propagate = False
-
-    # 如果你也想要一个 JSONL（同一个文件更难读，这里默认不开）
-    jsonl_path = os.path.join(save_dir, "bandit_live.jsonl")
-    def log_jsonl(obj: dict):
-        with open(jsonl_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-
-    return logger, log_path, log_jsonl
 
 def _short(s: str, n: int = 80) -> str:
     s = (s or "").replace("\n", " ").strip()
@@ -91,154 +63,7 @@ def evaluate_model_loss(model, tokenizer, probe_loader, templates, tpl_id, args,
     # 返回平均 loss
     return loss_sum / max(1, n)
 
-def compute_time_series_context_from_batch(batch, eps: float = 1e-8):
-    """
-    仅使用 batch['history'] 计算 A 类特征（不碰 target，避免泄漏）
-    返回已近似归一化的字典：std_W_n, cv_W, trend_W_n, acf_lag1_n, acf_lag48_n
-    """
-    history = batch["history"]
-    if isinstance(history, torch.Tensor):
-        H = history.detach().to(torch.float32).cpu().numpy()
-    else:
-        H = np.asarray([h for h in history], dtype=np.float32)
 
-    mean_W = np.mean(H, axis=1)
-    std_W  = np.std(H, axis=1)
-    cv_W   = std_W / (np.abs(mean_W) + eps)
-
-    # 简易趋势：标准化时间轴的一阶线性回归斜率（取绝对值）
-    t = np.arange(H.shape[1], dtype=np.float32)
-    t = (t - t.mean()) / (t.std() + eps)
-    slope = ((H * t).mean(axis=1) - H.mean(axis=1) * t.mean()) / (t.var() + eps)
-    trend = np.abs(slope)
-
-    def acf(x: np.ndarray, lag: int) -> float:
-        x = x - x.mean()
-        if len(x) <= lag:
-            return 0.0
-        num = float(np.dot(x[:-lag], x[lag:]))
-        den = float(np.dot(x, x)) + eps
-        return num / den
-
-    acf1  = np.array([acf(h, 1)  for h in H], dtype=np.float32)
-    acf48 = np.array([acf(h, 48) for h in H], dtype=np.float32)
-
-    # 批级聚合（均值）
-    mean_W_mean = float(mean_W.mean())
-    std_W_mean  = float(std_W.mean())
-    cv_W_mean   = float(cv_W.mean())
-    trend_mean  = float(trend.mean())
-    acf1_mean   = float(acf1.mean())
-    acf48_mean  = float(acf48.mean())
-
-    # 粗略归一（经验尺度，可按数据再微调）
-    std_W_n   = float(np.clip(std_W_mean / (abs(mean_W_mean) * 0.5 + 1.0), 0, 1))
-    trend_W_n = float(np.clip(trend_mean / 1.0, 0, 1))
-    acf1_n    = float((acf1_mean + 1.0) / 2.0)      # [-1,1] → [0,1]
-    acf48_n   = float((acf48_mean + 1.0) / 2.0)
-
-    # 标准差
-    # 变异系数，相对波动性
-    # 趋势强度
-    # 自相关系数 序列当前值和前一时刻值的相关性
-    # 长期自相关系数 序列当前值和 48 时刻前值的相关性（如日周期）
-    return {
-        "std_W_n": std_W_n,
-        "cv_W": float(np.clip(cv_W_mean, 0, 1)),
-        "trend_W_n": trend_W_n,
-        "acf_lag1_n": acf1_n,
-        # "acf_lag48_n": acf48_n,
-    }
-
-def compute_news_density_context(args, now_ts, news_df, density_limit = 50):
-    count = get_num_news_between(news_df, args.news_time_col, now_ts, args.news_window_days)
-
-    density_per_day = count / float(max(1, args.news_window_days))
-
-    # 经验上界 50 条/天，超界截断；如你的数据很稠密，可把 50 调高
-    return {"news_density_n": float(np.clip(density_per_day / density_limit, 0.0, 1.0))}
-
-
-#把“任务/场景说明”编码成一个数值向量（比如 freq_min, horizon, token_budget, volatility_bin, need_explain, need_ci）。
-# 这是上下文特征，供 Bandit 使用（即“在什么任务条件下，哪种选择更好”）。
-def encode_instruction(args, ctx, volatility_bin):
-    """
-    将任务/场景（args）与可选的动态上下文（ctx）编码成 bandit 的上下文向量。
-    ctx 可包含：A(时序统计)、E(训练态)、新闻密度等，均应已归一到[0,1]或近似范围。
-    """
-    features = []
-
-    # —— 静态任务特征（归一化到相近尺度）——
-    features += [                        # 波动档位，已归一到[0,1]
-        args.freq_min / 60.0,                      # 频率（分钟）/ 60 → [0,1]（假设不超过1小时）
-        args.horizon / 48,                     # 预测长度 / 48 → [0,1]（假设不超过48个点）
-        min(args.token_budget, 2048) / 2048.0,         # 截断到 2048 再归一
-        float(volatility_bin) / args.volatility_bin_tiers,             # 你是10档 → 归一到[0,1]
-        1.0 if args.need_explain else 0.0,
-        1.0 if args.need_ci else 0.0,
-    ]
-
-    # —— 动态上下文特征 ——（存在则添加）
-    # if ctx:
-    def clip01(x: float) -> float:
-        return float(np.clip(float(x), 0.0, 1.0))
-
-    for key in [
-        "std_W_n", "cv_W", "trend_W_n",
-        "acf_lag1_n", "acf_lag48_n",          # A: 时序统计
-        "news_density_n",                     # 新闻密度
-        "prev_model_loss_n", "prev_model_loss_ema_n",  # E: 训练态
-        # 若你之后也加入 delta，可在此扩展 "delta_val_n"
-    ]:
-        v = ctx.get(key, 0.0) #if ctx else 0.0
-        features.append(float(np.clip(v, 0.0, 1.0)))  # 保守截断
-
-    return np.array(features, dtype=np.float32)
-
-#ε-贪心选择。用在“分数接近/想增加探索”时做随机探索
-def choose_arm(scores, epsilon=0.05):
-    if np.random.rand() < epsilon:
-        return int(np.random.randint(len(scores)))
-    return int(np.argmax(scores))
-
-#从验证集固定抽一小片（probe）形成稳定的评估子集，减少奖励噪声与评估成本。
-def prepare_val_probe_by_number(val_loader, size):
-    idxs = list(range(len(val_loader.dataset)))
-    np.random.shuffle(idxs)
-    idxs = idxs[:min(size, len(idxs))]
-    probe_ds = Subset(val_loader.dataset, idxs)
-    probe_loader = torch.utils.data.DataLoader(probe_ds, batch_size=val_loader.batch_size, shuffle=True)
-    return probe_loader
-
-def prepare_val_probe_by_frac(val_loader, frac: float, *, min_samples: int = 1,
-                              seed: int, keep_order: bool = True):
-    """
-    从验证集按比例抽取一个固定 probe 子集（不放回抽样）。
-    - frac ∈ (0, 1]：抽取比例
-    - min_samples：至少抽多少个
-    - seed：为复现实验可指定随机种子
-    - keep_order：是否按原数据集顺序排序抽取到的索引（便于日志/复现）
-    """
-    assert 0 < frac <= 1.0, "frac 必须在 (0, 1] 之间"
-    dataset = val_loader.dataset
-    N = len(dataset)
-
-    # 计算抽样数目
-    k = max(min_samples, int(np.floor(N * frac)))
-    k = min(k, N)
-
-    rng = np.random.default_rng(seed)
-    idxs = rng.choice(N, size=k, replace=False)
-    if keep_order:
-        idxs = np.sort(idxs)
-
-    probe_ds = Subset(dataset, idxs.tolist())
-    probe_loader = torch.utils.data.DataLoader(
-        probe_ds,
-        batch_size=val_loader.batch_size,
-        shuffle=True
-    )
-    return probe_loader
 
 # 把一个 batch 的结构化样本 → prompt 文本 → tokenizer → 张量
 # 这里的 batch 是 SlidingDataset 的输出格式
@@ -337,26 +162,7 @@ def forward_batch_build_inputs(batch, tokenizer, templates, tpl_id, args,
 
     return input_ids, attn, labels, metas
 
-def evaluate_probe(model, tokenizer, probe_loader, templates, tpl_id, args,
-                   news_df, policy_name, policy_kw, device, volatility_bin):
-    model.eval()
-    preds, trues = [], []
-    with torch.no_grad():
-        for batch in probe_loader:
-            input_ids, attn, labels, meta = forward_batch_build_inputs(
-                batch, tokenizer, templates, tpl_id, args, news_df, policy_name, policy_kw, news_encoder=None,volatility_bin=volatility_bin
-            )
-            input_ids = input_ids.to(device); attn = attn.to(device); labels = labels.to(device)
-            out = model(input_ids=input_ids, attention_mask=attn, labels=None)
-            y_hat = out['pred']
-            # ✅ 转成 float32 再转 numpy，避免 "unsupported ScalarType BFloat16"
-            preds.append(y_hat.detach().to(torch.float32).cpu().numpy())
-            trues.append(labels.detach().to(torch.float32).cpu().numpy())
 
-    preds = np.concatenate(preds, axis=0)
-    trues = np.concatenate(trues, axis=0)
-    m = METRIC_FN[args.reward_metric](trues, preds)
-    return m
 
 def evaluate_test_metrics(model, tokenizer, probe_loader, templates, tpl_id, args,
                          news_df, policy_name, policy_kw, device, volatility_bin):
@@ -656,59 +462,39 @@ def main(args):
     def _read(path):
         if path.endswith('.parquet'): return pd.read_parquet(path)
         return pd.read_csv(path)
-    train_df = _read(args.train_file); val_df = _read(args.val_file)
+
+
+
+    train_df = _read(args.train_file)
+    val_df = _read(args.val_file)
+    test_df = _read(args.test_file)
+
     train_df[args.time_col] = pd.to_datetime(train_df[args.time_col], dayfirst=args.dayFirst)
     val_df[args.time_col] = pd.to_datetime(val_df[args.time_col],dayfirst=args.dayFirst)
+    test_df[args.time_col] = pd.to_datetime(test_df[args.time_col])
 
-    # 由 make_loader(...) 构建 DataLoader；再从验证集做一个固定的 probe_loader。
-    # print("---train_df---")
     train_loader = make_loader(train_df, args.time_col, args.value_col,
                                args.history_len, args.horizon, args.stride, args.batch_size, shuffle=True, id_col=args.id_col, dayFirst=args.dayFirst)
-    # print("train_loader:", train_loader)
-    # print("---val_df---")
     val_loader = make_loader(val_df, args.time_col, args.value_col,
                              args.history_len, args.horizon, args.stride, args.batch_size, shuffle=True, id_col=args.id_col, dayFirst=args.dayFirst)
-    
+    test_loader = make_loader(test_df, args.time_col, args.value_col,
+                            args.history_len, args.horizon, args.stride, args.batch_size,
+                            shuffle=True, id_col=args.id_col, dayFirst= args.dayFirst)
+
     probe_loader = prepare_val_probe_by_frac(val_loader, frac=args.rl_val_probe_frac,seed=args.seed)
-
-    test_loader = None
-    if getattr(args, "test_file", ""):
-        test_df = _read(args.test_file)
-        test_df[args.time_col] = pd.to_datetime(test_df[args.time_col])
-        test_loader = make_loader(test_df, args.time_col, args.value_col,
-                                args.history_len, args.horizon, args.stride, args.batch_size,
-                                shuffle=True, id_col=args.id_col, dayFirst= args.dayFirst)
         
-
     # ===== News retrieval setup =====
     news_df = pd.DataFrame(columns=[args.news_time_col, args.news_text_col])
-    
-    # news datetime format
     news_df[args.news_time_col] = pd.to_datetime(news_df[args.news_time_col], dayfirst=args.dayFirst)
-    
     if args.news_path:
         news_df = load_news(args.news_path, args.news_time_col, args.news_tz)
     # print("news_df dates:",news_df[args.news_time_col])
     
     #  ============ Build news encoder (SBERT or TF-IDF) ===========
-    # 注意：如果没有新闻数据，则不构建编码器
-    news_encoder = None
-    if len(news_df) > 0:
-        news_encoder = NewsEncoder(backend=getattr(args, "news_encoder_backend", "auto")) \
-                        .build(news_df[args.news_text_col].fillna("").astype(str).tolist())
-    
-    # load keywords for policy-based news selection
-    # 注意：如果没有提供关键词文件，则 policy_only/supply_demand 策略会退化为 recent_topk 策略。
     policy_kw = _load_keywords(args.keyword_path)
-    # sd_kw = _load_keywords(args.policy_keywords_supplydemand)
-
     # ===== Load Prompt templates =====
     templates = load_templates(args.template_pool)
     # 允许指定模板 ID 列表，或者使用所有模板
-    allowed_tpl_ids = list(templates.keys()) if args.template_ids is None else args.template_ids
-
-    # allowed_tpl_ids = [4]
-    # print("Allowed tpl ids: ",allowed_tpl_ids)
 
     tokenizer, model = load_llama_lora(
         base_model=args.base_model,
@@ -758,22 +544,15 @@ def main(args):
     print(f"Computed volatility_bin for training set = {volatility_bin}")
     volatility_bin_val  = compute_volatility_bin(val_df, time_col=args.time_col, value_col=args.value_col, window=args.history_len, bins=args.volatility_bin_tiers, dayfirst=args.dayFirst)
     print(f"Computed volatility_bin for validation set = {volatility_bin_val}")
-    volatility_bin_test  = compute_volatility_bin(test_df, time_col=args.time_col, value_col=args.value_col, window=args.history_len, bins=args.volatility_bin_tiers, dayfirst=args.dayFirst)
+    volatility_bin_test = compute_volatility_bin(test_df, time_col=args.time_col, value_col=args.value_col,window=args.history_len, bins=args.volatility_bin_tiers, dayfirst=args.dayFirst)
     print(f"Computed volatility_bin for testing set = {volatility_bin_test}")
     
     # Normalizer for reward scaling
     normalizer = RewardNormalizer(ema=args.reward_ema, use_group_norm=args.domain_reward_norm)
-    prev_metric = None
-    global_step = 0
-    best_metric = float('inf')
-    stale_rounds = 0
-
     val_state = ValidationState(ema_alpha=args.val_ema_alpha)
 
 
     # ======= Bandit setup =======
-    # !!!!!!Context features from instruction!!!!!!
-    # 初始时没有动态上下文，只有静态任务特征
     context_vector = encode_instruction(args, ctx={}, volatility_bin=volatility_bin)
 
     # def tpl_features(tid): return np.array([templates[tid].get('has_explain',0)], dtype=np.float32)
@@ -786,21 +565,16 @@ def main(args):
     )
     
     d_tpl = len(context_vector) + len(tpl_features(allowed_tpl_ids[0], context_vector=context_vector))
-    bandit_tpl = LinTS(d_tpl, v=args.ts_v) if args.rl_algo=='lints' else LinUCB(d_tpl, alpha=args.ucb_alpha)
-    
-    policy_space = ['keywords', 'sentiment', "keyword_sentiment_hybrid"]
-    policy_space = ["keyword_sentiment_hybrid"]
-    if args.news_policy not in policy_space: policy_space.append(args.news_policy)
-    pol_features = None
-    # def pol_features(i): return np.array([i/(max(1,len(policy_space)-1))], dtype=np.float32)
-    # d_pol = len(context_vector) + len(pol_features(0))
     d_pol = len(context_vector)
+    bandit_tpl = LinTS(d_tpl, v=args.ts_v) if args.rl_algo=='lints' else LinUCB(d_tpl, alpha=args.ucb_alpha)
+    policy_space = ['keywords', 'sentiment', "keyword_sentiment_hybrid"]
+    pol_features = None
     bandit_pol = LinTS(d_pol, v=args.ts_v) if args.rl_algo=='lints' else LinUCB(d_pol, alpha=args.ucb_alpha)
 
-    # initial selections
-    tpl_id = 4
-    policy_name = args.news_policy
-    pol_idx = 0
+    prev_metric = None
+    global_step = 0
+    best_metric = float('inf')
+    stale_rounds = 0
 
 
     for epoch in range(args.epochs):
@@ -810,8 +584,7 @@ def main(args):
         # prev_model_loss_ema_n = context_vector.get("prev_model_loss_ema_n", None)
         # print(args.rl_use)
         if (args.select_policy_by == "epoch") and args.rl_use == 1:
-            # print(allowed_tpl_ids)
-            # print("test")
+
             context_vector = get_context_features(None, news_df, args, prev_model_loss_n=None, prev_model_loss_ema_n=None, val_state=val_state, train_loader=train_loader,volatility_bin=volatility_bin)
             bandit_result = bandit_select(args, context_vector, live_logger, allowed_tpl_ids, policy_space,
                           bandit_tpl, bandit_pol, tpl_features, pol_features, epoch, None, None)
@@ -854,6 +627,7 @@ def main(args):
 
             steps_this_cycle = max(0, args.rl_cycle_steps)
             if steps_this_cycle > 0:
+                loss_window = deque(maxlen=50)   # 近 50 步的滑动平均
                 for _ in range(steps_this_cycle):
                     model.train()
                     out = model(input_ids=input_ids, attention_mask=attn, labels=labels)
@@ -864,8 +638,8 @@ def main(args):
                     loss.backward()
 
                     # logging
-                    loss_window = deque(maxlen=50)   # 近 50 步的滑动平均
-                    log_interval = getattr(args, "log_interval", 10)  # 没有就默认 10 步
+                    # log_interval = getattr(args, "log_interval", 10)  # 没有就默认 10 步
+                    log_interval = 10
                     loss_window.append(float(loss.detach().cpu()))
                     if global_step % log_interval == 0:
                         avg_train_loss = sum(loss_window)/len(loss_window)
