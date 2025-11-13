@@ -269,7 +269,7 @@ def keyword_sentiment_hybrid(cand: pd.DataFrame, text_col: str, keywords, K: int
     return cand.loc[chosen]
 
 def select_news(cand: pd.DataFrame, policy: str, text_col: str,
-                policy_kw: List[str], K: int, time_col, query_text=None,now_ts=None, region=None,**kwargs) -> pd.DataFrame:
+                policy_kw: List[str], K: int) -> pd.DataFrame:
     if policy == 'keywords':
         return policy_by_keywords(cand, text_col, policy_kw, K)
     if policy == 'sentiment':

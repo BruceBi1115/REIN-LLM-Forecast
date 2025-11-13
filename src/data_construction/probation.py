@@ -1,4 +1,8 @@
 #从验证集固定抽一小片（probe）形成稳定的评估子集，减少奖励噪声与评估成本。
+import numpy as np
+import torch
+from torch.utils.data import Subset
+
 def prepare_val_probe_by_number(val_loader, size):
     idxs = list(range(len(val_loader.dataset)))
     np.random.shuffle(idxs)
@@ -36,25 +40,3 @@ def prepare_val_probe_by_frac(val_loader, frac: float, *, min_samples: int = 1,
         shuffle=True
     )
     return probe_loader
-
-
-def evaluate_probe(model, tokenizer, probe_loader, templates, tpl_id, args,
-                   news_df, policy_name, policy_kw, device, volatility_bin):
-    model.eval()
-    preds, trues = [], []
-    with torch.no_grad():
-        for batch in probe_loader:
-            input_ids, attn, labels, meta = forward_batch_build_inputs(
-                batch, tokenizer, templates, tpl_id, args, news_df, policy_name, policy_kw, news_encoder=None,volatility_bin=volatility_bin
-            )
-            input_ids = input_ids.to(device); attn = attn.to(device); labels = labels.to(device)
-            out = model(input_ids=input_ids, attention_mask=attn, labels=None)
-            y_hat = out['pred']
-            # ✅ 转成 float32 再转 numpy，避免 "unsupported ScalarType BFloat16"
-            preds.append(y_hat.detach().to(torch.float32).cpu().numpy())
-            trues.append(labels.detach().to(torch.float32).cpu().numpy())
-
-    preds = np.concatenate(preds, axis=0)
-    trues = np.concatenate(trues, axis=0)
-    m = METRIC_FN[args.reward_metric](trues, preds)
-    return m

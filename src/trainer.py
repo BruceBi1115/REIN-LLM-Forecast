@@ -6,12 +6,12 @@ from torch.optim import AdamW
 from torch.utils.data import Subset
 from tqdm import tqdm
 from itertools import islice
-from .utils import set_seed, device_from_id
-from .data import make_loader
+from .utils.utils import set_seed, device_from_id
+from .data_construction.data import make_loader
 from .news_rules import load_news, get_candidates, select_news, _load_keywords, get_num_news_between
-from .prompt import load_templates, format_history, format_news, build_prompt
-from .rl_bandit import LinTS, LinUCB, RewardNormalizer
-from .metrics import rmse, mae, smape
+from .data_construction.prompt import load_templates, format_history, format_news, build_prompt
+from .RL.rl_bandit import LinTS, LinUCB, RewardNormalizer
+from .utils.metrics import rmse, mae, smape
 from .model import load_llama_lora, SPECIAL_PRED_TOKEN
 from collections import deque
 from .news_rules import NewsEncoder
@@ -22,48 +22,14 @@ from torch.optim.lr_scheduler import LambdaLR
 from transformers import get_cosine_schedule_with_warmup
 import math
 from .utils.logger import setup_live_logger
-from .data_construction.probation import prepare_val_probe_by_frac, prepare_val_probe_by_number, evaluate_probe
-from .RL.features import compute_time_series_context_from_batch, compute_news_density_context, encode_instruction
+from .data_construction.probation import prepare_val_probe_by_frac, prepare_val_probe_by_number
+from .RL.features import bandit_select, compute_time_series_context_from_batch, compute_news_density_context, encode_instruction, get_context_features
 
-METRIC_FN = {'rmse': rmse, 'mae': mae, 'smape': smape}
+# METRIC_FN = {'rmse': rmse, 'mae': mae, 'smape': smape}
 
 def _short(s: str, n: int = 80) -> str:
     s = (s or "").replace("\n", " ").strip()
     return s if len(s) <= n else s[:n] + "…"
-
-def evaluate_model_loss(model, tokenizer, probe_loader, templates, tpl_id, args,
-                      news_df, policy_name, policy_kw, device, volatility_bin):
-    """
-    在验证集上计算模型的平均 loss（与训练时 out['loss'] 定义保持一致）
-    """
-    model.eval()
-    loss_sum, n = 0.0, 0
-
-    with torch.no_grad():
-        for batch in probe_loader:
-            # 构造输入
-            input_ids, attn, labels, metas = forward_batch_build_inputs(
-                batch, tokenizer, templates, tpl_id, args,
-                news_df, policy_name, policy_kw, news_encoder=None,volatility_bin=volatility_bin
-            )
-            input_ids = input_ids.to(device)
-            attn      = attn.to(device)
-            labels    = labels.to(device)
-
-            # 前向计算：注意这里把 labels 传进去
-            out = model(input_ids=input_ids, attention_mask=attn, labels=labels)
-
-            # 直接拿模型定义的 loss
-            batch_loss = out["loss"]
-
-            # 转成 float 累加
-            loss_sum += float(batch_loss.detach().cpu()) * labels.size(0)
-            n += labels.size(0)
-
-    # 返回平均 loss
-    return loss_sum / max(1, n)
-
-
 
 # 把一个 batch 的结构化样本 → prompt 文本 → tokenizer → 张量
 # 这里的 batch 是 SlidingDataset 的输出格式
@@ -98,13 +64,7 @@ def forward_batch_build_inputs(batch, tokenizer, templates, tpl_id, args,
         now_ts = t_target
 
         selected = select_news(
-            cand, policy_name, args.news_text_col, policy_kw, args.news_topK,
-            query_text=query_text, now_ts=now_ts, region=args.region,
-            encoder=news_encoder, time_col=args.news_time_col,
-            alpha=args.hybrid_alpha_sem,
-            beta=args.hybrid_alpha_time,
-            gamma=args.hybrid_alpha_region,
-            lam=args.mmr_lambda,
+            cand, policy_name, args.news_text_col, policy_kw, args.news_topK
         )
         hist_str = format_history(history, args.unit, hist_budget, tokenizer)
         news_str = format_news(selected, args.news_text_col, news_budget, tokenizer,
@@ -163,38 +123,54 @@ def forward_batch_build_inputs(batch, tokenizer, templates, tpl_id, args,
     return input_ids, attn, labels, metas
 
 
-
-def evaluate_test_metrics(model, tokenizer, probe_loader, templates, tpl_id, args,
+def evaluate_metrics(model, tokenizer, data_loader, templates, tpl_id, args,
                          news_df, policy_name, policy_kw, device, volatility_bin):
     model.eval()
-    mse_sum, mae_sum, n = 0.0, 0.0, 0
+    loss_sum, n_samples = 0.0, 0
+    mse_sum, mae_sum, n_elems = 0.0, 0.0, 0
+
     with torch.no_grad():
-        for batch in probe_loader:
+        for batch in data_loader:
+            # 构造输入
             input_ids, attn, labels, metas = forward_batch_build_inputs(
                 batch, tokenizer, templates, tpl_id, args,
-                news_df, policy_name, policy_kw, news_encoder=None, volatility_bin=volatility_bin
+                news_df, policy_name, policy_kw,
+                news_encoder=None, volatility_bin=volatility_bin
             )
             input_ids = input_ids.to(device)
             attn      = attn.to(device)
-            labels    = labels = labels.to(device, dtype=torch.float32)
 
-            out = model(input_ids=input_ids, attention_mask=attn, labels=None)
-            y_hat = out["pred"]
+            # 模型的 dtype（bfloat16/float16/float32）
+            model_dtype = next(model.parameters()).dtype
+            labels_for_loss = labels.to(device=device, dtype=model_dtype)
 
-            # 用 fp32 算更稳
-            y_hat = y_hat.float()
-            labels = labels.float()
+            # 一次前向，同时拿 loss 和 pred
+            out = model(input_ids=input_ids, attention_mask=attn,
+                        labels=labels_for_loss)
 
-            mse = torch.nn.functional.mse_loss(y_hat, labels, reduction="sum")
-            mae = torch.nn.functional.l1_loss(y_hat, labels, reduction="sum")
+            # 1) 统计 loss（按样本数平均）
+            batch_loss = out["loss"]
+            # 假设 loss 是“batch 内平均”，乘上样本数得到总和
+            loss_sum += float(batch_loss.detach().cpu()) * labels.size(0)
+            n_samples += labels.size(0)
+
+            # 2) 统计 MSE/MAE（按元素数平均）
+            # 用 fp32 算数值更稳
+            y_hat = out["pred"].to(dtype=torch.float32, device=device)
+            labels_fp32 = labels.to(device=device, dtype=torch.float32)
+
+            mse = torch.nn.functional.mse_loss(y_hat, labels_fp32, reduction="sum")
+            mae = torch.nn.functional.l1_loss(y_hat, labels_fp32, reduction="sum")
 
             mse_sum += float(mse.detach().cpu())
             mae_sum += float(mae.detach().cpu())
-            n += labels.numel()
+            n_elems += labels_fp32.numel()
 
-    mse_avg = mse_sum / max(1, n)
-    mae_avg = mae_sum / max(1, n)
-    return mse_avg, mae_avg
+    loss_avg = loss_sum / max(1, n_samples)
+    mse_avg  = mse_sum  / max(1, n_elems)
+    mae_avg  = mae_sum  / max(1, n_elems)
+
+    return loss_avg, mse_avg, mae_avg
 
 def compute_volatility_bin(df, time_col="", value_col="", 
                            window=48, bins = 10, dayfirst=True):
@@ -234,128 +210,6 @@ def compute_volatility_bin(df, time_col="", value_col="",
     bin_id = np.digitize(vol, thresholds, right=True)
     return int(min(bin_id, bins-1))
 
-def bandit_select(args, context_vector, live_logger, allowed_tpl_ids, policy_space,
-                  bandit_tpl, bandit_pol, tpl_features, pol_features,epoch, bidx, global_step):
-
-    if args.select_policy_by == "epoch":
-    # === (A) 只在 epoch 开头选择一次 ===
-        # 模板
-        scores_tpl = []
-        for tid in allowed_tpl_ids:
-            # print(instr_feat.shape, tpl_features(tid).shape)
-            # print(instr_feat)
-            # print(tid)
-            x = np.concatenate([context_vector, tpl_features(tid = int(tid), context_vector = context_vector)], axis=0)
-            s = bandit_tpl.sample_score(x) if isinstance(bandit_tpl, LinTS) else bandit_tpl.ucb_score(x)
-            scores_tpl.append(s)
-        tpl_idx = choose_arm(scores_tpl, epsilon=args.epsilon)
-        tpl_id  = allowed_tpl_ids[tpl_idx]
-
-        # 新闻策略
-        scores_pol = []
-        for i, pol in enumerate(policy_space):
-            # x = np.concatenate([context_vector, pol_features(i)], axis=0)
-            x = context_vector.astype(np.float32)
-            s = bandit_pol.sample_score(x) if isinstance(bandit_pol, LinTS) else bandit_pol.ucb_score(x)
-            scores_pol.append(s)
-        pol_idx = choose_arm(scores_pol, epsilon=args.epsilon)
-        policy_name = policy_space[pol_idx]
-
-        live_logger.info(
-            f"DECISION_EPOCH_BEGIN epoch={epoch+1} "
-            f"sel_template={tpl_id} policy={policy_name} "
-            f"tpl_scores={[round(float(s),4) for s in scores_tpl]} "
-            f"pol_scores={[round(float(s),4) for s in scores_pol]}"
-        )
-    # ===============================================
-    elif args.select_policy_by == "batch" :
-    # ======= 每个Batch都决策：选择本批次使用的“模板 + 新闻策略” =======
-        # 为“模板选择”算分
-        scores_tpl = []
-        for tid in allowed_tpl_ids:
-            # 将 “任务/场景说明” instr_feat 和 “模板特征” tpl_features 拼接成完整的上下文特征向量
-            x = np.concatenate([context_vector, tpl_features(tid = int(tid),context_vector = context_vector)], axis=0)
-            # 计算该模板的分数（LinTS 或 LinUCB）
-            s = bandit_tpl.sample_score(x) if isinstance(bandit_tpl, LinTS) else bandit_tpl.ucb_score(x)
-            scores_tpl.append(s)
-        # 用 ε-贪心选择模板。
-        tpl_idx = choose_arm(scores_tpl, epsilon=args.epsilon)
-        tpl_id = allowed_tpl_ids[tpl_idx]
-
-        # 为“新闻策略选择”算分
-        scores_pol = []
-        for i, pol in enumerate(policy_space):
-            # x = np.concatenate([context_vector, pol_features(i)], axis=0)
-            x = context_vector.astype(np.float32)
-            s = bandit_pol.sample_score(x) if isinstance(bandit_pol, LinTS) else bandit_pol.ucb_score(x)
-            scores_pol.append(s)
-        # 用 ε-贪心选择模板。
-        pol_idx = choose_arm(scores_pol, epsilon=args.epsilon)
-        policy_name = policy_space[pol_idx]
-        
-        # —— 即时记录：本次“决策”层面的信息（不含样本级新闻）
-
-        live_logger.info(
-                    f"DECISION_BATCH_BEGIN epoch={epoch+1} batch={bidx} step={global_step} "
-                    f"sel_template={tpl_id} policy={policy_name} "
-                    f"tpl_scores={[round(float(s),4) for s in scores_tpl]} "
-                    f"pol_scores={[round(float(s),4) for s in scores_pol]}"
-                )
-    # ===============================================
-    return {"tpl_id": tpl_id, "policy_name": policy_name, "pol_idx": pol_idx}
-
-def get_context_features(batch, news_df, args, prev_model_loss_n, prev_model_loss_ema_n, val_state, train_loader, volatility_bin):
-
-    if args.select_policy_by == "epoch":
-        num_batches_in_epoch = len(train_loader)
-        sample_batches_for_epoch_ctx = max(1, min(8, num_batches_in_epoch // 10))  # 10%的批次，至少1，最多8
-
-        time_series_ctx_list = []
-        news_density_ctx_list = []
-
-        # 采样前若干 batch 粗估上下文（也可用 probe_loader 或随机采样）
-        with torch.no_grad():
-            for sampled_batch in islice(iter(train_loader), sample_batches_for_epoch_ctx):
-                ts_ctx = compute_time_series_context_from_batch(sampled_batch)
-                time_series_ctx_list.append(ts_ctx)
-
-                # 取该批第一条样本的预测起点作为 now_ts（按你的实际结构取）
-                now_ts = sampled_batch["target_times"][0][0]
-                news_ctx = compute_news_density_context(
-                    args,
-                    now_ts=now_ts,
-                    news_df=news_df,
-                )
-                news_density_ctx_list.append(news_ctx)
-
-        # 聚合为 epoch 级上下文（取均值）
-        def average_context(dicts):
-            if not dicts:
-                return {}
-            keys = dicts[0].keys()
-            return {k: float(np.mean([d[k] for d in dicts if k in d])) for k in keys}
-
-        epoch_time_series_ctx = average_context(time_series_ctx_list)
-        epoch_news_density_ctx = average_context(news_density_ctx_list)
-        epoch_training_state_ctx = val_state.as_context()
-
-        ctx = {**epoch_time_series_ctx, **epoch_news_density_ctx, **epoch_training_state_ctx}
-        context_vector = encode_instruction(args, ctx=ctx, volatility_bin=volatility_bin)
-
-    elif args.select_policy_by == "batch":
-        # batch 级：每个 batch 动态计算
-        time_series_ctx = compute_time_series_context_from_batch(batch)
-        now_ts = batch["target_times"][0][0]
-        news_density_ctx = compute_news_density_context(
-            args,
-            now_ts=now_ts,
-            news_df=news_df,
-        )
-        training_state_ctx = val_state.as_context()
-        dynamic_ctx = {**time_series_ctx, **news_density_ctx, **training_state_ctx}
-        context_vector = encode_instruction(args, ctx=dynamic_ctx, volatility_bin=volatility_bin)
-
-    return context_vector
 
 def make_tpl_feature_fn(templates,
                         add_one_hot=True,
@@ -463,8 +317,6 @@ def main(args):
         if path.endswith('.parquet'): return pd.read_parquet(path)
         return pd.read_csv(path)
 
-
-
     train_df = _read(args.train_file)
     val_df = _read(args.val_file)
     test_df = _read(args.test_file)
@@ -481,7 +333,7 @@ def main(args):
                             args.history_len, args.horizon, args.stride, args.batch_size,
                             shuffle=True, id_col=args.id_col, dayFirst= args.dayFirst)
 
-    probe_loader = prepare_val_probe_by_frac(val_loader, frac=args.rl_val_probe_frac,seed=args.seed)
+    # probe_loader = prepare_val_probe_by_frac(val_loader, frac=args.rl_val_probe_frac,seed=args.seed)
         
     # ===== News retrieval setup =====
     news_df = pd.DataFrame(columns=[args.news_time_col, args.news_text_col])
@@ -509,8 +361,6 @@ def main(args):
     #     model.generation_config.pad_token_id = tokenizer.pad_token_id
 
     model.to(device)
-    model.train()
-
     optim = AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr,
@@ -563,6 +413,7 @@ def main(args):
         add_cost_proxy=False,
         add_cross_terms=True,
     )
+    allowed_tpl_ids = sorted([t['id'] for t in templates.values()])
     
     d_tpl = len(context_vector) + len(tpl_features(allowed_tpl_ids[0], context_vector=context_vector))
     d_pol = len(context_vector)
@@ -575,20 +426,25 @@ def main(args):
     global_step = 0
     best_metric = float('inf')
     stale_rounds = 0
+    loss_window = deque(maxlen=50)   # 近 50 步的滑动平均
+    tpl_id = allowed_tpl_ids[0]
+    policy_name = policy_space[0]
 
-
+    # ======= 主训练循环：按 epoch 迭代 =======
     for epoch in range(args.epochs):
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")
-        live_logger.info(f"EPOCH_BEGIN epoch={epoch+1}, template_id={tpl_id}, policy={policy_name}")    
+        
         # prev_model_loss_n = context_vector.get("prev_model_loss_n", None)
         # prev_model_loss_ema_n = context_vector.get("prev_model_loss_ema_n", None)
         # print(args.rl_use)
         if (args.select_policy_by == "epoch") and args.rl_use == 1:
-
             context_vector = get_context_features(None, news_df, args, prev_model_loss_n=None, prev_model_loss_ema_n=None, val_state=val_state, train_loader=train_loader,volatility_bin=volatility_bin)
             bandit_result = bandit_select(args, context_vector, live_logger, allowed_tpl_ids, policy_space,
                           bandit_tpl, bandit_pol, tpl_features, pol_features, epoch, None, None)
+            
+            live_logger.info(f"EPOCH_BEGIN epoch={epoch+1}, template_id={bandit_result['tpl_id']}, policy={bandit_result['policy_name']}")    
 
+        # ======== 训练主循环：按批次迭代 ========
         for bidx, batch in enumerate(pbar):
             # print(batch)
             if (args.select_policy_by == "batch") and args.rl_use == 1:
@@ -606,39 +462,27 @@ def main(args):
             input_ids, attn, labels, metas = forward_batch_build_inputs(
                 batch, tokenizer, templates, tpl_id, args, news_df, policy_name, policy_kw, news_encoder=None, volatility_bin=volatility_bin
             )
+
             input_ids = input_ids.to(device)
             attn = attn.to(device)
             model_dtype = next(model.parameters()).dtype
             labels   = labels.to(device=device, dtype=model_dtype)
 
-            # print("------------")
-
-            # —— 即时记录：样本级别（被选新闻等）
-            for m in metas:
-                titles = []
-                for item in m.get("selected_news", []):
-                    t = item.get("title") or item.get("text_snippet") or ""
-                    titles.append(_short(t, 30))
-                # live_logger.info(
-                #     f"SAMPLE epoch={epoch+1} batch={bidx} step={global_step} "
-                #     f"series={m.get('series_id')} target_time(1st)={m.get('target_time')} "
-                #     f"tok_len={m.get('tok_len')} Can_News={m.get('Candidates_found')} Sel_News={len(titles)} titles={titles}"
-                # )
-
+            # # —— 即时记录：样本级别（被选新闻等）
+            # for m in metas:
+            #     titles = []
+            #     for item in m.get("selected_news", []):
+            #         t = item.get("title") or item.get("text_snippet") or ""
+            #         titles.append(_short(t, 30))
             steps_this_cycle = max(0, args.rl_cycle_steps)
             if steps_this_cycle > 0:
-                loss_window = deque(maxlen=50)   # 近 50 步的滑动平均
                 for _ in range(steps_this_cycle):
                     model.train()
                     out = model(input_ids=input_ids, attention_mask=attn, labels=labels)
                     loss = out['loss']
-
-                    pred = out['pred'].float()
-                    loss = torch.nn.functional.mse_loss(pred, labels.float(), reduction="mean")
                     loss.backward()
 
                     # logging
-                    # log_interval = getattr(args, "log_interval", 10)  # 没有就默认 10 步
                     log_interval = 10
                     loss_window.append(float(loss.detach().cpu()))
                     if global_step % log_interval == 0:
@@ -662,32 +506,24 @@ def main(args):
                     eval_interval = math.ceil(len(train_loader) * args.rl_cycle_steps / args.rl_update_times)
                     # validation 
                     if global_step % eval_interval == 0:
-                        val_metric = evaluate_probe(model, tokenizer, probe_loader, templates, tpl_id, args,
+                        val_model_loss, val_mse, val_mae = evaluate_metrics(
+                            model, tokenizer, val_loader, templates, tpl_id, args,
                             news_df, policy_name, policy_kw, device, volatility_bin=volatility_bin_val)
-                        # val_mse = evaluate_val_mse(model, tokenizer, probe_loader, templates, tpl_id, args,
-                        #                             news_df, policy_name, policy_kw, device)
-                        # model_loss = None
-                        # If reward is from val loss, compute it once here to save time
-                        model_loss = evaluate_model_loss(model, tokenizer, probe_loader, templates, tpl_id, args,
-                               news_df, policy_name, policy_kw, device, volatility_bin=volatility_bin_val)
-
+                    
                         # tqdm.write(f"[step {global_step}] val_{args.reward_metric}={val_metric:.4f}  model_loss={model_loss:.6f}")
                         pbar.set_postfix({
-                            f'val_metric_{args.reward_metric}': f"{val_metric:.4f}",
-                            'model_loss': f"{model_loss:.6f}"
+                            f'val_model_loss': f"{val_model_loss:.4f}",
+                            f'val_mse': f"{val_mse:.4f}",
+                            f'val_mae': f"{val_mae:.4f}",
+                            f'reward_metric': f"{args.reward_metric}"
                         })
-                        # live_logger.info(
-                        #     f"EVAL   epoch={epoch+1} batch={bidx} step={global_step} "
-                        #     f"val_{args.reward_metric}={val_metric:.4f} model_loss={model_loss:.6f} "
-                        #     f"best={best_metric:.4f}"
-                        # )
-                        model.eval()
                         # 计算奖励
-                        # 用模型的loss还是reward_metric
-                        if args.reward_from_model_loss == 1:
-                            metric_now = model_loss
-                        else:
-                            metric_now = val_metric
+                        if args.reward_metric == "loss":
+                            metric_now = val_model_loss
+                        elif args.reward_metric == "mse":
+                            metric_now = val_mse
+                        elif args.reward_metric == "mae":
+                            metric_now = val_mae
                             # set reward
                         r = 0
                         r_hat = 0
@@ -706,9 +542,11 @@ def main(args):
                             r_hat = normalizer.update_and_normalize(r, group_key=(args.region, args.horizon) if args.domain_reward_norm else None)
 
                         live_logger.info(
-                            f"EVAL   epoch={epoch+1} batch={bidx} step={global_step} "
-                            f"val_metric_{args.reward_metric}={val_metric:.4f} reward_raw={r:.4f} "
-                            f"model_loss={model_loss:.6f} "
+                            f"EVAL  epoch={epoch+1} batch={bidx} step={global_step} "
+                            f"val_model_loss: {val_model_loss:.4f} "
+                            f"val_mse: {val_mse:.4f} "
+                            f"val_mae: {val_mae:.4f} "
+                            f"[reward_metric]: {args.reward_metric} "
                             f"reward_norm={r_hat:.4f} avg_tok_len={float(attn.sum(dim=1).float().mean().item()):.1f} "
                             f"topK={int(args.news_topK)} best={best_metric:.4f}"
                         )
@@ -733,9 +571,19 @@ def main(args):
 
 
                         prev_metric = metric_now
-                        pbar.set_postfix({f'val_{args.reward_metric}': f"{val_metric:.4f}"})
+                        pbar.set_postfix({
+                            f'val_model_loss': f"{val_model_loss:.4f}",
+                            f'val_mse': f"{val_mse:.4f}",
+                            f'val_mae': f"{val_mae:.4f}",
+                            f'reward_metric': f"{args.reward_metric}"
+                        })
                         # update val_state
-                        delta_val = val_state.update(model_loss)
+                        if args.reward_metric == "loss":
+                            val_state.update(val_model_loss)
+                        elif args.reward_metric == "mse":
+                            val_state.update(val_mse)
+                        elif args.reward_metric == "mae":
+                            val_state.update(val_mae)
 
                         if metric_now < (best_metric - 1e-4):
                             # Save best
@@ -751,7 +599,7 @@ def main(args):
                             if stale_rounds >= args.early_stop_patience:
                                 print("Early stopping triggered.")
                                 if test_loader is not None:
-                                    test_mse, test_mae = evaluate_test_metrics(model, tokenizer, test_loader, templates, tpl_id, args,
+                                    test_mse, test_mae = evaluate_metrics(model, tokenizer, test_loader, templates, tpl_id, args,
                                                                 news_df, policy_name, policy_kw, device, volatility_bin=volatility_bin_test)
                                     tqdm.write(f"[TEST] mse={test_mse:.6f}  mae={test_mae:.6f}")
                                 return
@@ -764,6 +612,6 @@ def main(args):
                         #            os.path.join(args.save_dir, f'step{global_step}.pt'))   
                                   
     if test_loader is not None:
-        test_mse, test_mae = evaluate_test_metrics(model, tokenizer, test_loader, templates, tpl_id, args,
+        test_mse, test_mae = evaluate_metrics(model, tokenizer, test_loader, templates, tpl_id, args,
                                     news_df, policy_name, policy_kw, device, volatility_bin=volatility_bin_test)
         tqdm.write(f"[TEST] mse={test_mse:.6f}  mae={test_mae:.6f}")

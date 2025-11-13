@@ -1,5 +1,11 @@
 import yaml
-from .utils import count_tokens
+
+from src.news_rules import lead3
+from ..utils.utils import count_tokens
+import numpy as np
+import torch
+from typing import List
+
 
 def load_templates(path: str):
     with open(path, 'r', encoding='utf-8') as f:
@@ -15,7 +21,6 @@ def format_history(hist_values, unit: str, budget_tokens: int, tokenizer):
     return text
 
 def format_news(news_rows, text_col: str, budget_tokens: int, tokenizer, summary_method='lead3', max_sentences=3):
-    from .news_rules import lead3
     bullets = []
     for _, r in news_rows.iterrows():
         txt = str(r.get(text_col, ''))

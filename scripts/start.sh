@@ -11,16 +11,14 @@ python run.py \
     --news_text_col 'summary_response' \
     --news_time_col 'date' \
     --keyword_path 'keywords/kws.txt' \
+    --epochs 10\
     --keyword_number 20 \
     --news_window_days 7 \
-    --news_policy 'keywords' \
-    --rl_algo "lints" \
+    --news_topM 20 \
+    --news_topK 5 \
     --batch_size 2\
-    --reward_from_model_loss 0 \
-    --reward_metric "mae" \
-    --rl_val_probe_frac 0.5 \
-    --rl_cycle_steps 1\
     --rl_use 1 \
-    --epochs 10\
-    --select_policy_by "epoch" \
-    --volatility_bin_tiers 100
+    --rl_algo "lints" \
+    --reward_metric "mse" \
+    --rl_cycle_steps 1 \
+    --select_policy_by "epoch"

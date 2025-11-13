@@ -1,7 +1,7 @@
 # run.py
 import argparse
 from src.trainer import main as main_train
-from src.chat.gpt_client import run_from_config, stream_from_config
+from src.chatgpt_4o_mini_keyword_generate.gpt_client import run_from_config, stream_from_config
 from pathlib import Path
 from openai import OpenAI
 from textblob import TextBlob
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     parser.add_argument('--region', type=str, default='', help='region/state/country code')
     parser.add_argument('--unit', type=str, default='', help='unit string')
     parser.add_argument('--season', type=str, default='', help='DJF/MAM/JJA/SON or empty')
-    parser.add_argument('--volatility_bin_tiers', type=int, default=10, help='the tiers to bin volatility')
+    parser.add_argument('--volatility_bin_tiers', type=int, default=100, help='the tiers to bin volatility')
     parser.add_argument('--token_budget', type=int, default=1200, help='max tokens for composed prompt')
     parser.add_argument('--val_ema_alpha', type=float, default=0.9, help='EMA alpha for validation loss smoothing')
 
@@ -55,8 +55,8 @@ if __name__ == '__main__':
     parser.add_argument('--news_window_days', type=int, default=1, help='look-back window (days) before target time')
     parser.add_argument('--news_topM', type=int, default=20, help='candidate news cap per sample')
     parser.add_argument('--news_topK', type=int, default=5, help='news K after policy/RL')
-    parser.add_argument('--news_policy', type=str, default='',
-                        help='rule-based extraction strategy or combinational bandit')
+    # parser.add_argument('--news_policy', type=str, default='',
+    #                     help='rule-based extraction strategy or combinational bandit')
     
     # Keyword files for policy-based news selection
     parser.add_argument('--keyword_path', type=str, default='keywords/kws.txt',
@@ -111,7 +111,7 @@ if __name__ == '__main__':
     parser.add_argument('--rl_val_probe_size', type=int, default=256, help='fixed validation probe size')
     parser.add_argument('--rl_val_probe_frac', type=float, default=0.5, help='fixed validation probe fraction')
 
-    parser.add_argument('--reward_metric', type=str, default='rmse', choices=['rmse','mae','smape'], help='reward metric')
+    parser.add_argument('--reward_metric', type=str, default='rmse', choices=['mse','mae','loss'], help='reward metric')
     parser.add_argument('--reward_mode', type=str, default='delta', choices=['delta','negative'], help='delta or negative')
     parser.add_argument('--reward_len_penalty', type=float, default=0.0, help='penalty for prompt tokens')
     parser.add_argument('--reward_k_penalty', type=float, default=0.0, help='penalty for K news')
@@ -123,55 +123,15 @@ if __name__ == '__main__':
 
     # ===== Eval & Logging =====
     parser.add_argument('--early_stop_patience', type=int, default=10, help='patience in eval rounds')
-    parser.add_argument('--metrics', type=str, default='rmse,mae,smape', help='metrics to report')
     parser.add_argument('--log_dir', type=str, default='./logs', help='log directory')
     parser.add_argument('--run_name', type=str, default='xl-rl-forecast', help='run name')
-    parser.add_argument('--wandb_project', type=str, default='', help='wandb project (optional)')
-    parser.add_argument('--wandb_entity', type=str, default='', help='wandb entity (optional)')
 
-    # ===== News retrieval (advanced) =====
-
-    # 指定新闻文本要用哪种方法编码成向量（自动选择/SBERT/TF-IDF）
-    # sbert：用 Sentence-BERT 把新闻和 query 转成语义向量（精度高，但依赖外部模型）。
-    # tfidf：用 TF-IDF（传统文本向量化，快，零依赖，但语义能力有限）。
-    # auto：优先尝试 sbert，如果加载失败则回退到 tfidf。
-    parser.add_argument("--news_encoder_backend", type=str, default="auto", choices=["auto","sbert","tfidf"])
-    # 混合策略 hybrid_alpha 的权重参数,调大 → 更依赖“新闻语义是否贴合任务 query”；调小 → 语义作用减弱
-    parser.add_argument("--hybrid_alpha_sem", type=float, default=0.7)
-    # 控制 时间衰减项 的权重, 调大 → 更偏好“最新的新闻”；调小 → 时间新旧影响减弱
-    parser.add_argument("--hybrid_alpha_time", type=float, default=0.2)
-    # 控制 区域匹配 的权重。调大 → 更偏好“包含目标区域关键词”的新闻；调小 → 区域因素不太重要。
-    parser.add_argument("--hybrid_alpha_region", type=float, default=0.1)
-    # 用于 MMR（最大边际相关性） 策略时，平衡“相关性 vs 多样性”。λ 越大：更看重“和 query 的相关性”；λ 越小：更看重“和已选新闻不一样”（去重、多样化）。
-    parser.add_argument("--mmr_lambda", type=float, default=0.7)
-
-    parser.add_argument(
-        "--description",
-        type=str,
-        default="",
-        help="描述这个 dataset 的用途，例如 '新州电价数据'"
+    # ===== Keyword Generation =====
+    parser.add_argument("--description",type=str,default="",help="描述这个 dataset 的用途，例如 '新州电价数据'")
+    parser.add_argument("--keyword_number",type=int,default=10,help="how many keywords to generate")
+    parser.add_argument("--select_policy_by",type = str,default = "epoch",choices=["epoch", "batch"], 
+                        help = "Select policy/template by epoch-level or batch-level"
     )
-    parser.add_argument(
-        "--keyword_number",
-        type=int,
-        default=10,
-        help="how many keywords to generate"
-    )
-    parser.add_argument(
-        "--reward_from_model_loss",
-        type = int,
-        default = 0,
-        help = "Use model's loss as reward? (0/1)"
-    )
-    parser.add_argument(
-        "--select_policy_by",
-        type = str,
-        default = "epoch",
-        choices=["epoch", "batch"],
-        help = "Select policy/template by epoch-level or batch-level"
-    )
-
-    
 
     args = parser.parse_args()
 
@@ -188,45 +148,32 @@ if __name__ == '__main__':
         args.token_budget_news_frac    /= s
         args.token_budget_instr_frac   /= s
 
+    # # 生成关键词
+    
+    # description = args.description.strip()
+    # text = run_from_config(
+    #     config_path="src/chatgpt_4o_mini_keyword_generate/config.json",
+    #     kind="generate_keywords",  # 选择 A/B/C
+    #     variables={
+    #         "description": description if description else "null",
+    #         "number": args.keyword_number
+    #     },
+    #     system="Be concise in your output.",
+    #     temperature=0.2,
+    # )
 
-    description = args.description.strip()
-    text = run_from_config(
-        config_path="src/chat/config.json",
-        kind="generate_keywords",  # 选择 A/B/C
-        variables={
-            "description": description if description else "null",
-            "number": args.keyword_number
-        },
-        system="Be concise in your output.",
-        temperature=0.2,
-    )
+    #   # 获取输出文本
+    # text = text.strip()
 
-      # 获取输出文本
-    text = text.strip()
+    # # 确保目录存在
+    # out_path = Path("keywords/kws.txt")
+    # out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 确保目录存在
-    out_path = Path("keywords/kws.txt")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # # 写入文件
+    # with open(out_path, "w", encoding="utf-8") as f:
+    #     f.write(text)
 
-    # 写入文件
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(text)
+    # print(f"[Keywords] Have been recorded in {out_path}")
 
-    print(f"[Keywords] Have been recorded in {out_path}")
-
-    # 假设我们有几条新闻
-    # news_list = [
-    #     "The company reported a significant increase in revenue this quarter.",
-    #     "Bruce is the best",
-    #     "The government announced new measures to support renewable energy development."
-    # ]
-
-    # for i, news in enumerate(news_list, 1):
-    #     blob = TextBlob(news)
-    #     sentiment = blob.sentiment  # 返回 polarity 和 subjectivity
-    #     print(f"新闻 {i}: {news}")
-    #     print(f"  极性 (polarity): {sentiment.polarity:.2f}")     # -1.0 (负面) ~ +1.0 (正面)
-    #     print(f"  主观性 (subjectivity): {sentiment.subjectivity:.2f}") # 0.0 (客观) ~ 1.0 (主观)")
-    #     print("-" * 60)
 
     main_train(args)
