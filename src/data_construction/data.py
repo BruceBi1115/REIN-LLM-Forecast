@@ -123,7 +123,7 @@ class SlidingDataset(Dataset):
         hist = window[self.value_col].values.astype(np.float32)   # (L,)
         # print("hist:", hist)
         y    = target[self.value_col].values.astype(np.float32)   # (H,)
-        
+        # print("target:", y)
 
         # 这里的列已经在 __init__ 里解析为 datetime 了，直接格式化
         history_times = window[self.time_col].dt.strftime("%Y-%m-%d %H:%M:%S").fillna("").tolist()
@@ -131,11 +131,11 @@ class SlidingDataset(Dataset):
         t_target_str  = target_times[0] if target_times else ""
 
         # print("t_target_str:", t_target_str)
-
-        series_id = gid if gid is not None else "single"
+        # 假设说有个id column叫region，那series id就可能是nsw，vic等等
+        series_id = gid if gid is not None else "Not Specified"
         return {
-            "history": hist,              # (L,)
-            "target": y,                  # (H,)
+            "history_value": hist,              # shape (L,) [29.335 26.028 24 ...]
+            "target_value": y,                  # shape (H,)
             "history_times": history_times,  # ['2024-01-01 00:30:00', ...]
             "target_times":  target_times,   # ['2024-01-02 00:00:00', ...]
             "target_time":   t_target_str,   # 'YYYY-MM-DD HH:MM:SS'

@@ -2,7 +2,7 @@ templates:
   - id: 0
     name: "Inlined_cot_decomp_breath"
     text: |
-      Now you have a dataset with description: {description}
+      Now you have a dataset from {region} with description: {description}
       You are a domain-agnostic time series analyst. The historical {value_col} data is: {HISTORY}
       The start date of the historical data is {start_date}. The end date of the historical data is {end_date}. The data is sampled every {freq} minutes.
       
@@ -21,19 +21,18 @@ templates:
       3. Based on the historical data and news texts (if given), predict the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
 
       Take a deep breath and reassess your forecasting strategy every {breath_freq} steps.
-
     has_example: false
     has_breath: true
     has_decomp: true
     has_self_consistency: true
     n_paths: 5
-    breath_freq: 5
+
 
 
   - id: 1
     name: "Inlined_cot_simple"
     text: |
-      Now you have a dataset with description: {description}
+      Now you have a dataset from {region} with description: {description}
       You are a domain-agnostic time series analyst. The historical {value_col} is: {HISTORY}
       The start date of the historical data is {start_date}. The end date of the historical data is {end_date}. The data is sampled every {freq} minutes.
       
@@ -42,19 +41,18 @@ templates:
       Please reason step by step and then predict the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
 
       Take a deep breath and reassess your forecasting strategy every {breath_freq} steps.
-
     has_example: false
     has_breath: true
     has_decomp: false
     has_self_consistency: false
     n_paths: 1
-    breath_freq: 5
+
 
 
   - id: 2
     name: "Inlined_cot_with_example"
     text: |
-      Now you have a dataset with description: {description}
+      Now you have a dataset from {region} with description: {description}
       You are a domain-agnostic time series analyst. The historical {value_col} is: {HISTORY}
       The start date of the historical data is {start_date}. The end date of the historical data is {end_date}. The data is sampled every {freq} minutes.
 
@@ -66,19 +64,18 @@ templates:
       Please reason step by step and predict the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
 
       Take a deep breath and reassess your forecasting strategy every {breath_freq} steps.
-
     has_example: true
     has_breath: true
     has_decomp: false
     has_self_consistency: false
     n_paths: 1
-    breath_freq: 5
+
 
 
   - id: 3
     name: "Inlined_cot_self_consistency"
     text: |
-      Now you have a dataset with description: {description}
+      Now you have a dataset from {region} with description: {description}
       You are a domain-agnostic time series analyst. The historical {value_col} is: {HISTORY}
       The start date of the historical data is {start_date}. The end date of the historical data is {end_date}. The data is sampled every {freq} minutes.
 
@@ -88,19 +85,18 @@ templates:
       Then summarize the most consistent prediction across these paths.
 
       Take a deep breath and reassess your forecasting strategy every {breath_freq} steps.
-
     has_example: false
     has_breath: true
     has_decomp: false
     has_self_consistency: true
     n_paths: 5
-    breath_freq: 5
+
   
 
   - id: 4
     name: "Inlined_cot_uncertainty"
     text: |
-      Now you have a dataset with description: {description}
+      Now you have a dataset from {region} with description: {description}
       You are a forecasting assistant. The historical {value_col} is: {HISTORY}
       From {start_date} to {end_date}, sampled every {freq} minutes.
 
@@ -112,10 +108,10 @@ templates:
       3. Explain which factors contribute to this uncertainty.
 
       Take a deep breath and reassess every {breath_freq} steps.
-
     has_example: false
     has_breath: true
     has_decomp: false
     has_self_consistency: false
     n_paths: 1
-    breath_freq: 5
+
+

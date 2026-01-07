@@ -1,5 +1,6 @@
 # run.py
 import argparse
+import pandas as pd
 from src.trainer import main as main_train
 from src.chatgpt_4o_mini_keyword_generate.gpt_client import run_from_config, stream_from_config
 from pathlib import Path
@@ -10,6 +11,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Cross-domain LLaMA Forecasting with RL')
 
     # ===== Basic =====
+    parser.add_argument('--taskName', type=str, default='task1', help='The name of this running task')
     parser.add_argument('--gpu', type=int, default=0, help='gpu id')
     parser.add_argument('--seed', type=int, default=42, help='random seed')
     parser.add_argument('--precision', type=str, default='bf16', choices=['fp32', 'fp16', 'bf16'],
@@ -45,7 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('--history_len', type=int, default=48, help='steps for history window L')
     parser.add_argument('--horizon', type=int, default=48, help='steps to predict H')
     parser.add_argument('--stride', type=int, default=48, help='sliding stride for training')
-
+    parser.add_argument('--target_precision', type=int, default=3, help='decimal places for target values')
     # ===== News retrieval (rule-based) =====
     parser.add_argument('--news_path', type=str, default='', help='path to news store (should be a JSON file)')
     parser.add_argument('--news_time_col', type=str, default='date', help='news timestamp column name')
@@ -68,6 +70,9 @@ if __name__ == '__main__':
                         help='shorten news before inserting to prompt')
     parser.add_argument('--news_max_sentences', type=int, default=3, help='max sentences per selected news')
 
+    # ==== News dropout ====
+    parser.add_argument('--news_dropout', type=float, default=0.2, help='random dropout rate for news items')
+
     # ===== Prompt templates =====
     parser.add_argument('--template_pool', type=str, default='configs/templates.yaml',
                         help='YAML/JSON templates with placeholders')
@@ -75,24 +80,24 @@ if __name__ == '__main__':
     parser.add_argument('--template_ids', type=str, default='', help='comma-separated template ids to allow (empty=all)')
 
     #===== Token budget fractions =====
-    parser.add_argument('--token_budget_history_frac', type=float, default=0.5, help='budget frac for history')
-    parser.add_argument('--token_budget_news_frac', type=float, default=0.4, help='budget frac for news')
-    parser.add_argument('--token_budget_instr_frac', type=float, default=0.1, help='budget frac for instruction')
+    parser.add_argument('--token_budget_history_frac', type=float, default=0.2, help='budget frac for history')
+    parser.add_argument('--token_budget_news_frac', type=float, default=0.5, help='budget frac for news')
+    parser.add_argument('--token_budget_instr_frac', type=float, default=0.3, help='budget frac for instruction')
 
     # ===== LLaMA =====
     parser.add_argument('--base_model', type=str, default='meta-llama/Meta-Llama-3-8B', help='HF model id or local path')
     parser.add_argument('--tokenizer', type=str, default='', help='HF tokenizer id (default: same as base_model)')
     parser.add_argument('--load_in_4bit', action='store_true', help='use 4-bit quantization (QLoRA)')
     parser.add_argument('--gradient_checkpointing', action='store_true', help='enable gradient checkpointing')
-    parser.add_argument('--max_seq_len', type=int, default=10000, help='max sequence length')
+    parser.add_argument('--max_seq_len', type=int, default=40000, help='max sequence length')
 
     # LoRA hyperparameters
     parser.add_argument('--lora_r', type=int, default=8, help='LoRA rank')
     parser.add_argument('--lora_alpha', type=int, default=32, help='LoRA alpha')
     parser.add_argument('--lora_dropout', type=float, default=0.05, help='LoRA dropout')
-    parser.add_argument('--target_modules', type=str, default='q_proj,k_proj,v_proj,o_proj',
+    parser.add_argument('--target_modules', type=str, default='q_proj,"k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj',
                         help='comma-separated target module names for LoRA')
-    parser.add_argument('--lr', type=float, default=2e-4, help='learning rate for LoRA params')
+    parser.add_argument('--lr', type=float, default=2e-5, help='learning rate for LoRA params')
     parser.add_argument('--weight_decay', type=float, default=0.0, help='weight decay')
     parser.add_argument('--warmup_ratio', type=float, default=0.03, help='warmup ratio')
     parser.add_argument('--batch_size', type=int, default=2, help='micro batch size per device')
@@ -122,7 +127,7 @@ if __name__ == '__main__':
     parser.add_argument('--epsilon', type=float, default=0.05, help='epsilon-greedy fallback')
 
     # ===== Eval & Logging =====
-    parser.add_argument('--early_stop_patience', type=int, default=10, help='patience in eval rounds')
+    parser.add_argument('--early_stop_patience', type=int, default=5, help='patience in eval rounds')
     parser.add_argument('--log_dir', type=str, default='./logs', help='log directory')
     parser.add_argument('--run_name', type=str, default='xl-rl-forecast', help='run name')
 
@@ -148,32 +153,49 @@ if __name__ == '__main__':
         args.token_budget_news_frac    /= s
         args.token_budget_instr_frac   /= s
 
-    # # 生成关键词
+    # 生成关键词
     
-    # description = args.description.strip()
-    # text = run_from_config(
-    #     config_path="src/chatgpt_4o_mini_keyword_generate/config.json",
-    #     kind="generate_keywords",  # 选择 A/B/C
-    #     variables={
-    #         "description": description if description else "null",
-    #         "number": args.keyword_number
-    #     },
-    #     system="Be concise in your output.",
-    #     temperature=0.2,
-    # )
+    description = args.description.strip()
+    text = run_from_config(
+        config_path="src/chatgpt_4o_mini_keyword_generate/config.json",
+        kind="generate_keywords",  # 选择 A/B/C
+        variables={
+            "description": description if description else "null",
+            "number": args.keyword_number
+        },
+        system="Be concise in your output.",
+        temperature=0.2,
+    )
 
-    #   # 获取输出文本
-    # text = text.strip()
+      # 获取输出文本
+    text = text.strip()
 
-    # # 确保目录存在
-    # out_path = Path("keywords/kws.txt")
-    # out_path.parent.mkdir(parents=True, exist_ok=True)
+    # 确保目录存在
+    out_path = Path(f"{args.keyword_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # # 写入文件
-    # with open(out_path, "w", encoding="utf-8") as f:
-    #     f.write(text)
+    # 写入文件
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(text)
 
-    # print(f"[Keywords] Have been recorded in {out_path}")
+    print(f"[Keywords] Have been recorded in {out_path}")
 
+    # 计算波动率分箱 (temp)
+    # def _read(path):
+    #     if path.endswith('.parquet'): return pd.read_parquet(path)
+    #     return pd.read_csv(path)
+
+    # train_df = _read(args.train_file)
+    # val_df = _read(args.val_file)
+    # test_df = _read(args.test_file)
+    # volatility_bin  = compute_volatility_bin(train_df, time_col=args.time_col, value_col=args.value_col, window=args.history_len, bins=args.volatility_bin_tiers, dayfirst=args.dayFirst)
+    # print(f"Computed volatility_bin for training set = {volatility_bin}")
+    # volatility_bin_val  = compute_volatility_bin(val_df, time_col=args.time_col, value_col=args.value_col, window=args.history_len, bins=args.volatility_bin_tiers, dayfirst=args.dayFirst)
+    # print(f"Computed volatility_bin for validation set = {volatility_bin_val}")
+    # volatility_bin_test = compute_volatility_bin(test_df, time_col=args.time_col, value_col=args.value_col,window=args.history_len, bins=args.volatility_bin_tiers, dayfirst=args.dayFirst)
+    # print(f"Computed volatility_bin for testing set = {volatility_bin_test}")
+
+
+    
 
     main_train(args)

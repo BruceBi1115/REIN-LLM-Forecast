@@ -1,0 +1,27 @@
+2026-01-07 19:35:14 | -----------------------------------------------------
+2026-01-07 19:35:14 | Training samples: 254, Validation samples: 35, Test samples: 71
+2026-01-07 19:35:14 | Training started with volatility bins: trainset=62, valset=80, testset=96
+2026-01-07 19:35:14 | Volatility bin tiers: 100
+2026-01-07 19:35:14 | -----------------------------------------------------
+2026-01-07 19:35:14 | RL settings: rl_use=0, rl_algo=lints, reward_metric=mse, reward_mode=delta, select_policy_by=epoch, rl_cycle_steps=1, rl_update_times=1
+2026-01-07 19:35:14 | -----------------------------------------------------
+2026-01-07 19:35:14 | Templates loaded: 1 templates from configs/pure_template.yaml
+2026-01-07 19:35:14 | news_topK=5, news_topM=20, news_window_days=7
+2026-01-07 19:35:14 | News retrieval policy keywords loaded from: keywords/kws.txt, total number of policy keywords: 20
+2026-01-07 19:35:14 | Epochs: 1, Max Steps: -1, Early Stop Patience: 5
+2026-01-07 19:35:14 | Base model: meta-llama/Meta-Llama-3-8B, LoRA r=8, alpha=32, dropout=0.05, target_modules=['q_proj', '"k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
+2026-01-07 19:35:14 | Max seq len: 40000, History len: 48, Horizon: 48, Stride: 48
+2026-01-07 19:35:14 | Description: This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market.
+2026-01-07 19:35:14 | news_dropout=0.2
+2026-01-07 19:35:14 | target_precision=3
+2026-01-07 19:35:14 | -----------------------------------------------------
+2026-01-07 19:35:14 | Device: cuda:0, Model dtype: torch.bfloat16
+2026-01-07 19:35:14 | Optimizer: AdamW, LR: 2e-05, Weight Decay: 0.0
+2026-01-07 19:35:14 | Scheduler: Cosine with Warmup, Total Steps: 16, Warmup Steps: 0
+2026-01-07 19:35:14 | Batch size: 1, Gradient Accumulation: 16, Effective Batch Size: 16
+2026-01-07 19:35:14 | Token budget: 1200 (history frac: 0.2, news frac: 0.5)
+2026-01-07 19:35:14 | -----------------------------------------------------
+2026-01-07 19:47:24 | -----------------------------------------------------
+2026-01-07 19:47:24 | [TEST] model_loss = 1.9642 mse=11363.3732  mae=15.3215
+2026-01-07 19:47:24 | Saved test results to ./results/test_results.csv
+2026-01-07 19:47:25 | Saved Pred vs True scatter plot to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/PredVsTrue_[Pure]NSW2015To2016ElectricityPriceWithNews.png

@@ -6,10 +6,10 @@ from ..news_rules import get_num_news_between
 
 def compute_time_series_context_from_batch(batch, eps: float = 1e-8):
     """
-    仅使用 batch['history'] 计算 A 类特征（不碰 target，避免泄漏）
+    仅使用 batch['history_value'] 计算 A 类特征（不碰 target，避免泄漏）
     返回已近似归一化的字典：std_W_n, cv_W, trend_W_n, acf_lag1_n, acf_lag48_n
     """
-    history = batch["history"]
+    history = batch["history_value"]
     if isinstance(history, torch.Tensor):
         H = history.detach().to(torch.float32).cpu().numpy()
     else:

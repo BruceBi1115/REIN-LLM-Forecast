@@ -1,0 +1,26 @@
+2026-01-07 13:58:45 | -----------------------------------------------------
+2026-01-07 13:58:45 | Training samples: 254, Validation samples: 35, Test samples: 71
+2026-01-07 13:58:45 | Training started with volatility bins: trainset=62, valset=80, testset=96
+2026-01-07 13:58:45 | Volatility bin tiers: 100
+2026-01-07 13:58:45 | -----------------------------------------------------
+2026-01-07 13:58:45 | RL settings: rl_use=0, rl_algo=lints, reward_metric=mse, reward_mode=delta, select_policy_by=epoch, rl_cycle_steps=1, rl_update_times=1
+2026-01-07 13:58:45 | -----------------------------------------------------
+2026-01-07 13:58:45 | Templates loaded: 1 templates from configs/norl_template.yaml
+2026-01-07 13:58:45 | news_topK=5, news_topM=20, news_window_days=7
+2026-01-07 13:58:45 | News retrieval policy keywords loaded from: keywords/kws.txt, total number of policy keywords: 20
+2026-01-07 13:58:45 | Epochs: 3, Max Steps: -1, Early Stop Patience: 5
+2026-01-07 13:58:45 | Base model: meta-llama/Meta-Llama-3-8B, LoRA r=8, alpha=32, dropout=0.05, target_modules=['q_proj', '"k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
+2026-01-07 13:58:45 | Max seq len: 40000, History len: 48, Horizon: 48, Stride: 48
+2026-01-07 13:58:45 | Description: This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market.
+2026-01-07 13:58:45 | news_dropout=0.0
+2026-01-07 13:58:45 | target_precision=3
+2026-01-07 13:58:45 | eval_gen_batches=5, eval_gen_per_batch=1, gen_max_new_tokens=256
+2026-01-07 13:58:45 | -----------------------------------------------------
+2026-01-07 13:58:45 | Device: cuda:0, Model dtype: torch.bfloat16
+2026-01-07 13:58:45 | Optimizer: AdamW, LR: 2e-05, Weight Decay: 0.0
+2026-01-07 13:58:45 | Scheduler: Cosine with Warmup, Total Steps: 48, Warmup Steps: 1
+2026-01-07 13:58:45 | Batch size: 1, Gradient Accumulation: 16, Effective Batch Size: 16
+2026-01-07 13:58:45 | Token budget: 1200 (history frac: 0.5, news frac: 0.4)
+2026-01-07 13:58:45 | -----------------------------------------------------
+2026-01-07 14:00:06 | EVAL epoch=1 step=254 tpl_id=1 policy=keywords val_model_loss=1.8147 val_mse=27.1103 val_mae=3.9504 best=27.1103
+2026-01-07 14:01:26 | EVAL epoch=2 step=508 tpl_id=1 policy=keywords val_model_loss=1.7915 val_mse=33.0968 val_mae=4.3691 best=27.1103

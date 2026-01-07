@@ -1,0 +1,14 @@
+  templates:
+  - id: 1
+    name: "Pure"
+    text: |
+      You are a forecasting assistant. The historical {value_col} is: {HISTORY}
+      The news can influence the time series forecasting as follows: {NEWS}
+      From {start_date} to {end_date}, sampled every {freq} minutes. Please provide your main forecast for the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
+
+    has_example: false
+    has_breath: false
+    has_decomp: false
+    has_self_consistency: false
+    n_paths: 0
+    breath_freq: 0
