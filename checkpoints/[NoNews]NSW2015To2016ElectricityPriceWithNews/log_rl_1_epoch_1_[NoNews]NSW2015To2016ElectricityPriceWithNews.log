@@ -1,0 +1,30 @@
+2026-01-07 21:26:09 | -----------------------------------------------------
+2026-01-07 21:26:09 | Training samples: 254, Validation samples: 35, Test samples: 71
+2026-01-07 21:26:09 | Training started with volatility bins: trainset=62, valset=80, testset=96
+2026-01-07 21:26:09 | Volatility bin tiers: 100
+2026-01-07 21:26:09 | -----------------------------------------------------
+2026-01-07 21:26:09 | RL settings: rl_use=1, rl_algo=lints, reward_metric=mse, reward_mode=delta, select_policy_by=epoch, rl_cycle_steps=1, rl_update_times=1
+2026-01-07 21:26:09 | -----------------------------------------------------
+2026-01-07 21:26:09 | Templates loaded: 5 templates from configs/templates.yaml
+2026-01-07 21:26:09 | news_topK=5, news_topM=20, news_window_days=7
+2026-01-07 21:26:09 | News retrieval policy keywords loaded from: keywords/kws.txt, total number of policy keywords: 20
+2026-01-07 21:26:09 | Epochs: 1, Max Steps: -1, Early Stop Patience: 5
+2026-01-07 21:26:09 | Base model: meta-llama/Meta-Llama-3-8B, LoRA r=8, alpha=32, dropout=0.05, target_modules=['q_proj', '"k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
+2026-01-07 21:26:09 | Max seq len: 40000, History len: 48, Horizon: 48, Stride: 48
+2026-01-07 21:26:09 | Description: This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market.
+2026-01-07 21:26:09 | news_dropout=0.2
+2026-01-07 21:26:09 | target_precision=3
+2026-01-07 21:26:09 | -----------------------------------------------------
+2026-01-07 21:26:09 | Device: cuda:0, Model dtype: torch.bfloat16
+2026-01-07 21:26:09 | Optimizer: AdamW, LR: 2e-05, Weight Decay: 0.0
+2026-01-07 21:26:09 | Scheduler: Cosine with Warmup, Total Steps: 16, Warmup Steps: 0
+2026-01-07 21:26:09 | Batch size: 1, Gradient Accumulation: 16, Effective Batch Size: 16
+2026-01-07 21:26:09 | Token budget: 1200 (history frac: 0.2, news frac: 0.5)
+2026-01-07 21:26:09 | -----------------------------------------------------
+2026-01-07 21:26:09 | DECISION_EPOCH_BEGIN epoch=2 sel_template=4 policy=keyword_sentiment_hybrid tpl_scores=[-3.402, 6.5146, -4.1765, -4.7823, 8.9292] pol_scores=[1.6034, -1.0267, 1.8712]
+2026-01-07 21:31:37 | BANDIT_ROUND round=1 tpl_id=4 policy=keyword_sentiment_hybrid probe_loss=2.0682 probe_mse=7877467.1812 probe_mae=600311.6178 reward_norm=0.0000
+2026-01-07 21:31:37 | EPOCH_BEGIN epoch=1, selected_template_id=4, selected_policy=keyword_sentiment_hybrid
+2026-01-07 21:43:51 | -----------------------------------------------------
+2026-01-07 21:43:51 | [TEST] model_loss = 1.9629 mse=11362.3425  mae=15.2398
+2026-01-07 21:43:51 | Saved test results to ./results/test_results.csv
+2026-01-07 21:43:51 | Saved Pred vs True scatter plot to ./checkpoints/[NoNews]NSW2015To2016ElectricityPriceWithNews/PredVsTrue_[NoNews]NSW2015To2016ElectricityPriceWithNews.png

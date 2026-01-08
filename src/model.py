@@ -10,6 +10,7 @@ PRED_TOKEN_PREFIX = "<PRED_"
 def build_pred_slots(horizon: int) -> str:
     return " ".join([f"<PRED_{i}>" for i in range(int(horizon))])
 
+
 def load_llama_lora(
     base_model: str,
     tokenizer_id: str,
