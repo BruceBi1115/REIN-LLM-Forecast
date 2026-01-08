@@ -1,60 +1,50 @@
-2026-01-08 21:48:19 | -----------------------------------------------------
-2026-01-08 21:48:19 | Training samples: 254, Validation samples: 35, Test samples: 71
-2026-01-08 21:48:19 | Training started with volatility bins: trainset=62, valset=80, testset=96
-2026-01-08 21:48:19 | Volatility bin tiers: 100
-2026-01-08 21:48:19 | -----------------------------------------------------
-2026-01-08 21:48:19 | RL settings: rl_use=0, rl_algo=lints, reward_metric=mse, reward_mode=delta, select_policy_by=epoch, rl_cycle_steps=1, rl_update_times=1
-2026-01-08 21:48:19 | -----------------------------------------------------
-2026-01-08 21:48:19 | Templates loaded: 1 templates from configs/pure_template.yaml
-2026-01-08 21:48:19 | news_topK=10, news_topM=999, news_window_days=1
-2026-01-08 21:48:19 | News retrieval policy keywords loaded from: keywords/kws.txt, total number of policy keywords: 20
-2026-01-08 21:48:19 | Epochs: 30, Max Steps: -1, Early Stop Patience: 5
-2026-01-08 21:48:19 | Base model: meta-llama/Meta-Llama-3-8B, LoRA r=8, alpha=32, dropout=0.05, target_modules=['q_proj', '"k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
-2026-01-08 21:48:19 | Max seq len: 40000, History len: 48, Horizon: 48, Stride: 48
-2026-01-08 21:48:19 | Patch len: 4, Patch stride: 4
-2026-01-08 21:48:19 | Description: This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market.
-2026-01-08 21:48:19 | news_dropout=0.6
-2026-01-08 21:48:19 | -----------------------------------------------------
-2026-01-08 21:48:19 | Device: cuda:0, Model dtype: torch.bfloat16
-2026-01-08 21:48:19 | Optimizer: AdamW, LR: 2e-05, Weight Decay: 0.0
-2026-01-08 21:48:19 | Scheduler: Cosine with Warmup, Total Steps: 477, Warmup Steps: 14
-2026-01-08 21:48:19 | Batch size: 1, Gradient Accumulation: 16, Effective Batch Size: 16
-2026-01-08 21:48:19 | Token budget: 1200 (history frac: 0.2, news frac: 0.5)
-2026-01-08 21:48:19 | -----------------------------------------------------
-2026-01-08 21:48:54 | EVAL epoch=1 tpl_id=1 policy=keywords val_loss(zMSE)=157.190848 val_mse(raw)=255698.851140 val_mae(raw)=69.267563
-2026-01-08 21:49:28 | EVAL epoch=2 tpl_id=1 policy=keywords val_loss(zMSE)=158.083036 val_mse(raw)=303141.495534 val_mae(raw)=77.885888
-2026-01-08 21:49:28 | [Early Stop] stale_rounds=1/5 best=255698.851140
-2026-01-08 21:50:03 | EVAL epoch=3 tpl_id=1 policy=keywords val_loss(zMSE)=157.794866 val_mse(raw)=213427.163210 val_mae(raw)=58.397209
-2026-01-08 21:50:38 | EVAL epoch=4 tpl_id=1 policy=keywords val_loss(zMSE)=157.791016 val_mse(raw)=195207.692406 val_mae(raw)=53.661108
-2026-01-08 21:51:12 | EVAL epoch=5 tpl_id=1 policy=keywords val_loss(zMSE)=157.873326 val_mse(raw)=196330.403883 val_mae(raw)=53.022675
-2026-01-08 21:51:12 | [Early Stop] stale_rounds=1/5 best=195207.692406
-2026-01-08 21:51:47 | EVAL epoch=6 tpl_id=1 policy=keywords val_loss(zMSE)=157.767188 val_mse(raw)=197541.172181 val_mae(raw)=52.041218
-2026-01-08 21:51:47 | [Early Stop] stale_rounds=2/5 best=195207.692406
-2026-01-08 21:52:22 | EVAL epoch=7 tpl_id=1 policy=keywords val_loss(zMSE)=157.876618 val_mse(raw)=186918.528833 val_mae(raw)=50.037490
-2026-01-08 21:52:56 | EVAL epoch=8 tpl_id=1 policy=keywords val_loss(zMSE)=157.859766 val_mse(raw)=189672.072265 val_mae(raw)=50.360773
-2026-01-08 21:52:56 | [Early Stop] stale_rounds=1/5 best=186918.528833
-2026-01-08 21:53:31 | EVAL epoch=9 tpl_id=1 policy=keywords val_loss(zMSE)=157.823996 val_mse(raw)=180323.776221 val_mae(raw)=49.083372
-2026-01-08 21:54:06 | EVAL epoch=10 tpl_id=1 policy=keywords val_loss(zMSE)=157.744420 val_mse(raw)=187536.636021 val_mae(raw)=48.869150
-2026-01-08 21:54:06 | [Early Stop] stale_rounds=1/5 best=180323.776221
-2026-01-08 21:54:41 | EVAL epoch=11 tpl_id=1 policy=keywords val_loss(zMSE)=157.942746 val_mse(raw)=183302.761405 val_mae(raw)=48.751415
-2026-01-08 21:54:41 | [Early Stop] stale_rounds=2/5 best=180323.776221
-2026-01-08 21:55:15 | EVAL epoch=12 tpl_id=1 policy=keywords val_loss(zMSE)=157.800279 val_mse(raw)=176411.780223 val_mae(raw)=46.767954
-2026-01-08 21:55:50 | EVAL epoch=13 tpl_id=1 policy=keywords val_loss(zMSE)=157.863839 val_mse(raw)=173178.425398 val_mae(raw)=46.308787
-2026-01-08 21:56:25 | EVAL epoch=14 tpl_id=1 policy=keywords val_loss(zMSE)=157.969364 val_mse(raw)=187322.238566 val_mae(raw)=47.470635
-2026-01-08 21:56:25 | [Early Stop] stale_rounds=1/5 best=173178.425398
-2026-01-08 21:56:59 | EVAL epoch=15 tpl_id=1 policy=keywords val_loss(zMSE)=157.898382 val_mse(raw)=180775.833056 val_mae(raw)=46.681660
-2026-01-08 21:56:59 | [Early Stop] stale_rounds=2/5 best=173178.425398
-2026-01-08 21:57:34 | EVAL epoch=16 tpl_id=1 policy=keywords val_loss(zMSE)=157.863225 val_mse(raw)=185107.293904 val_mae(raw)=46.698088
-2026-01-08 21:57:34 | [Early Stop] stale_rounds=3/5 best=173178.425398
-2026-01-08 21:58:09 | EVAL epoch=17 tpl_id=1 policy=keywords val_loss(zMSE)=157.906641 val_mse(raw)=184165.514079 val_mae(raw)=46.871950
-2026-01-08 21:58:09 | [Early Stop] stale_rounds=4/5 best=173178.425398
-2026-01-08 21:58:43 | EVAL epoch=18 tpl_id=1 policy=keywords val_loss(zMSE)=157.904353 val_mse(raw)=183914.374346 val_mae(raw)=46.726113
-2026-01-08 21:58:43 | [Early Stop] stale_rounds=5/5 best=173178.425398
-2026-01-08 21:58:43 | Early stopping triggered at epoch 18.
-2026-01-08 21:58:44 | Saved loss curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValLoss_[Pure]NSW2015To2016ElectricityPriceWithNews.png
-2026-01-08 21:58:44 | Saved validation MSE curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValMSE_[Pure]NSW2015To2016ElectricityPriceWithNews.png
-2026-01-08 21:58:44 | Saved validation MAE curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValMAE_[Pure]NSW2015To2016ElectricityPriceWithNews.png
-2026-01-08 21:58:48 | -----------------------------------------------------
-2026-01-08 21:58:48 | [TEST] loss(zMSE)=3.950608 mse(raw)=6868.024365 mae(raw)=15.318331
-2026-01-08 21:58:48 | Saved test results to ./results/test_results.csv
-2026-01-08 21:58:48 | Saved Pred vs True plot to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/PredVsTrue_[Pure]NSW2015To2016ElectricityPriceWithNews.png
+2026-01-08 22:36:46 | -----------------------------------------------------
+2026-01-08 22:36:46 | Training samples: 254, Validation samples: 35, Test samples: 71
+2026-01-08 22:36:46 | Training started with volatility bins: trainset=62, valset=80, testset=96
+2026-01-08 22:36:46 | Volatility bin tiers: 100
+2026-01-08 22:36:46 | -----------------------------------------------------
+2026-01-08 22:36:46 | RL settings: rl_use=0, rl_algo=lints, reward_metric=mse, reward_mode=delta, select_policy_by=epoch, rl_cycle_steps=1, rl_update_times=1
+2026-01-08 22:36:46 | -----------------------------------------------------
+2026-01-08 22:36:46 | Templates loaded: 1 templates from configs/pure_template.yaml
+2026-01-08 22:36:46 | news_topK=10, news_topM=999, news_window_days=1
+2026-01-08 22:36:46 | News retrieval policy keywords loaded from: keywords/kws.txt, total number of policy keywords: 20
+2026-01-08 22:36:46 | Epochs: 30, Max Steps: -1, Early Stop Patience: 5
+2026-01-08 22:36:46 | Base model: meta-llama/Meta-Llama-3-8B, LoRA r=8, alpha=32, dropout=0.05, target_modules=['q_proj', '"k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
+2026-01-08 22:36:46 | Max seq len: 40000, History len: 48, Horizon: 48, Stride: 48
+2026-01-08 22:36:46 | Patch len: 4, Patch stride: 4
+2026-01-08 22:36:46 | Description: This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market.
+2026-01-08 22:36:46 | news_dropout=0.6
+2026-01-08 22:36:46 | -----------------------------------------------------
+2026-01-08 22:36:46 | Device: cuda:0, Model dtype: torch.bfloat16
+2026-01-08 22:36:46 | Optimizer: AdamW, LR: 2e-05, Weight Decay: 0.0
+2026-01-08 22:36:46 | Scheduler: Cosine with Warmup, Total Steps: 477, Warmup Steps: 14
+2026-01-08 22:36:46 | Batch size: 1, Gradient Accumulation: 16, Effective Batch Size: 16
+2026-01-08 22:36:46 | Token budget: 1200 (history frac: 0.2, news frac: 0.5)
+2026-01-08 22:36:46 | -----------------------------------------------------
+2026-01-08 22:37:20 | EVAL epoch=1 tpl_id=1 policy=keywords val_loss(zMSE)=157.190737 val_mse(raw)=255356.876965 val_mae(raw)=69.301975
+2026-01-08 22:37:55 | EVAL epoch=2 tpl_id=1 policy=keywords val_loss(zMSE)=158.080134 val_mse(raw)=303616.169118 val_mae(raw)=77.913402
+2026-01-08 22:37:55 | [Early Stop] stale_rounds=1/5 best=255356.876965
+2026-01-08 22:38:30 | EVAL epoch=3 tpl_id=1 policy=keywords val_loss(zMSE)=157.795089 val_mse(raw)=213640.931982 val_mae(raw)=58.299818
+2026-01-08 22:39:05 | EVAL epoch=4 tpl_id=1 policy=keywords val_loss(zMSE)=157.792076 val_mse(raw)=195827.856570 val_mae(raw)=53.719949
+2026-01-08 22:39:39 | EVAL epoch=5 tpl_id=1 policy=keywords val_loss(zMSE)=157.866071 val_mse(raw)=196357.438902 val_mae(raw)=52.677180
+2026-01-08 22:39:39 | [Early Stop] stale_rounds=1/5 best=195827.856570
+2026-01-08 22:40:14 | EVAL epoch=6 tpl_id=1 policy=keywords val_loss(zMSE)=157.765123 val_mse(raw)=196181.864261 val_mae(raw)=51.529507
+2026-01-08 22:40:14 | [Early Stop] stale_rounds=2/5 best=195827.856570
+2026-01-08 22:40:48 | EVAL epoch=7 tpl_id=1 policy=keywords val_loss(zMSE)=157.878404 val_mse(raw)=186180.889883 val_mae(raw)=49.582487
+2026-01-08 22:41:23 | EVAL epoch=8 tpl_id=1 policy=keywords val_loss(zMSE)=157.856864 val_mse(raw)=188930.584578 val_mae(raw)=49.788799
+2026-01-08 22:41:23 | [Early Stop] stale_rounds=1/5 best=186180.889883
+2026-01-08 22:41:58 | EVAL epoch=9 tpl_id=1 policy=keywords val_loss(zMSE)=157.826228 val_mse(raw)=178498.051321 val_mae(raw)=47.984813
+2026-01-08 22:42:33 | EVAL epoch=10 tpl_id=1 policy=keywords val_loss(zMSE)=157.749833 val_mse(raw)=186082.851812 val_mae(raw)=48.186213
+2026-01-08 22:42:33 | [Early Stop] stale_rounds=1/5 best=178498.051321
+2026-01-08 22:43:07 | EVAL epoch=11 tpl_id=1 policy=keywords val_loss(zMSE)=157.946373 val_mse(raw)=184458.251017 val_mae(raw)=48.632186
+2026-01-08 22:43:07 | [Early Stop] stale_rounds=2/5 best=178498.051321
+2026-01-08 22:43:42 | EVAL epoch=12 tpl_id=1 policy=keywords val_loss(zMSE)=157.804297 val_mse(raw)=173945.326450 val_mae(raw)=45.791334
+2026-01-08 22:44:17 | EVAL epoch=13 tpl_id=1 policy=keywords val_loss(zMSE)=157.864342 val_mse(raw)=172467.734001 val_mae(raw)=45.839303
+2026-01-08 22:44:51 | EVAL epoch=14 tpl_id=1 policy=keywords val_loss(zMSE)=157.976842 val_mse(raw)=186105.916174 val_mae(raw)=47.548846
+2026-01-08 22:44:51 | [Early Stop] stale_rounds=1/5 best=172467.734001
+2026-01-08 22:45:26 | EVAL epoch=15 tpl_id=1 policy=keywords val_loss(zMSE)=157.903516 val_mse(raw)=181101.929926 val_mae(raw)=46.797872
+2026-01-08 22:45:26 | [Early Stop] stale_rounds=2/5 best=172467.734001
+2026-01-08 22:46:01 | EVAL epoch=16 tpl_id=1 policy=keywords val_loss(zMSE)=157.911440 val_mse(raw)=186791.385217 val_mae(raw)=47.365365
+2026-01-08 22:46:01 | [Early Stop] stale_rounds=3/5 best=172467.734001
+2026-01-08 22:46:35 | EVAL epoch=17 tpl_id=1 policy=keywords val_loss(zMSE)=157.959208 val_mse(raw)=184041.662780 val_mae(raw)=44.854285
+2026-01-08 22:46:35 | [Early Stop] stale_rounds=4/5 best=172467.734001

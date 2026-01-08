@@ -78,3 +78,13 @@
 2026-01-08 22:19:17 | DECISION_EPOCH_BEGIN epoch=14 sel_template=1 policy=sentiment tpl_scores=[0.7565, 1.9126, 0.9554, 0.256, -1.0454] pol_scores=[0.1961, 0.9747, 0.2658]
 2026-01-08 22:19:19 | BANDIT_ROUND round=13 tpl_id=1 policy=sentiment probe_loss=158.065960 probe_mse=188810.576117 probe_mae=53.454903 reward_norm=0.737442
 2026-01-08 22:19:19 | EPOCH_BEGIN epoch=13, selected_template_id=1, selected_policy=sentiment
+2026-01-08 22:20:01 | EVAL epoch=13 tpl_id=1 policy=sentiment val_loss(zMSE)=157.871205 val_mse(raw)=180377.894604 val_mae(raw)=46.602566
+2026-01-08 22:20:01 | [Early Stop] stale_rounds=5/5 best=178127.892424
+2026-01-08 22:20:01 | Early stopping triggered at epoch 13.
+2026-01-08 22:20:01 | Saved loss curve to ./checkpoints/[NoNews]NSW2015To2016ElectricityPriceWithNews/ValLoss_[NoNews]NSW2015To2016ElectricityPriceWithNews.png
+2026-01-08 22:20:01 | Saved validation MSE curve to ./checkpoints/[NoNews]NSW2015To2016ElectricityPriceWithNews/ValMSE_[NoNews]NSW2015To2016ElectricityPriceWithNews.png
+2026-01-08 22:20:01 | Saved validation MAE curve to ./checkpoints/[NoNews]NSW2015To2016ElectricityPriceWithNews/ValMAE_[NoNews]NSW2015To2016ElectricityPriceWithNews.png
+2026-01-08 22:20:06 | -----------------------------------------------------
+2026-01-08 22:20:06 | [TEST] loss(zMSE)=4.022392 mse(raw)=7312.640918 mae(raw)=16.202015
+2026-01-08 22:20:06 | Saved test results to ./results/test_results.csv
+2026-01-08 22:20:06 | Saved Pred vs True plot to ./checkpoints/[NoNews]NSW2015To2016ElectricityPriceWithNews/PredVsTrue_[NoNews]NSW2015To2016ElectricityPriceWithNews.png

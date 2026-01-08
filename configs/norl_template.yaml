@@ -1,6 +1,6 @@
   templates:
   - id: 1
-    name: "Pure"
+    name: "Norl"
     text: |
       You are a forecasting assistant. The historical {value_col} is: {HISTORY}
       The news can influence the time series forecasting as follows: {NEWS}
