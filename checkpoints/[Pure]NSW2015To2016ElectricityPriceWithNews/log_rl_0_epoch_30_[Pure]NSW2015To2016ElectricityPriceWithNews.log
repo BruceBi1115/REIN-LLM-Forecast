@@ -48,3 +48,9 @@
 2026-01-08 22:46:01 | [Early Stop] stale_rounds=3/5 best=172467.734001
 2026-01-08 22:46:35 | EVAL epoch=17 tpl_id=1 policy=keywords val_loss(zMSE)=157.959208 val_mse(raw)=184041.662780 val_mae(raw)=44.854285
 2026-01-08 22:46:35 | [Early Stop] stale_rounds=4/5 best=172467.734001
+2026-01-08 22:47:10 | EVAL epoch=18 tpl_id=1 policy=keywords val_loss(zMSE)=157.959096 val_mse(raw)=190958.355916 val_mae(raw)=45.553022
+2026-01-08 22:47:10 | [Early Stop] stale_rounds=5/5 best=172467.734001
+2026-01-08 22:47:10 | Early stopping triggered at epoch 18.
+2026-01-08 22:47:10 | Saved loss curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValLoss_[Pure]NSW2015To2016ElectricityPriceWithNews.png
+2026-01-08 22:47:10 | Saved validation MSE curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValMSE_[Pure]NSW2015To2016ElectricityPriceWithNews.png
+2026-01-08 22:47:10 | Saved validation MAE curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValMAE_[Pure]NSW2015To2016ElectricityPriceWithNews.png
