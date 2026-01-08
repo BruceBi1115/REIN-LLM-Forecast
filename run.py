@@ -71,7 +71,7 @@ if __name__ == '__main__':
     parser.add_argument('--news_max_sentences', type=int, default=3, help='max sentences per selected news')
 
     # ==== News dropout ====
-    parser.add_argument('--news_dropout', type=float, default=0.2, help='random dropout rate for news items')
+    parser.add_argument('--news_dropout', type=float, default=0.6, help='random dropout rate for news items')
 
     # ===== Prompt templates =====
     parser.add_argument('--template_pool', type=str, default='configs/templates.yaml',
