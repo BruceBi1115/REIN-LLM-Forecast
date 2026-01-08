@@ -54,3 +54,7 @@
 2026-01-08 22:47:10 | Saved loss curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValLoss_[Pure]NSW2015To2016ElectricityPriceWithNews.png
 2026-01-08 22:47:10 | Saved validation MSE curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValMSE_[Pure]NSW2015To2016ElectricityPriceWithNews.png
 2026-01-08 22:47:10 | Saved validation MAE curve to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/ValMAE_[Pure]NSW2015To2016ElectricityPriceWithNews.png
+2026-01-08 22:47:15 | -----------------------------------------------------
+2026-01-08 22:47:15 | [TEST] loss(zMSE)=3.938449 mse(raw)=7051.320252 mae(raw)=15.277755
+2026-01-08 22:47:15 | Saved test results to ./results/test_results.csv
+2026-01-08 22:47:15 | Saved Pred vs True plot to ./checkpoints/[Pure]NSW2015To2016ElectricityPriceWithNews/PredVsTrue_[Pure]NSW2015To2016ElectricityPriceWithNews.png

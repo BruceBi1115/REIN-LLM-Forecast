@@ -15,6 +15,6 @@ Imports
 Exports  
 Regulation  
 Pricing  
-Competition  
-Technology  
-Capacity
+Capacity  
+Maintenance  
+Outages
