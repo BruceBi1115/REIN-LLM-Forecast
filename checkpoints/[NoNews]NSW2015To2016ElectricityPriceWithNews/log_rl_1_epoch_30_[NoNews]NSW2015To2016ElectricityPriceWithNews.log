@@ -1,0 +1,80 @@
+2026-01-08 22:10:28 | -----------------------------------------------------
+2026-01-08 22:10:28 | Training samples: 254, Validation samples: 35, Test samples: 71
+2026-01-08 22:10:28 | Training started with volatility bins: trainset=62, valset=80, testset=96
+2026-01-08 22:10:28 | Volatility bin tiers: 100
+2026-01-08 22:10:28 | -----------------------------------------------------
+2026-01-08 22:10:28 | RL settings: rl_use=1, rl_algo=lints, reward_metric=mse, reward_mode=delta, select_policy_by=epoch, rl_cycle_steps=1, rl_update_times=1
+2026-01-08 22:10:28 | -----------------------------------------------------
+2026-01-08 22:10:28 | Templates loaded: 5 templates from configs/templates.yaml
+2026-01-08 22:10:28 | news_topK=10, news_topM=999, news_window_days=1
+2026-01-08 22:10:28 | News retrieval policy keywords loaded from: keywords/kws.txt, total number of policy keywords: 20
+2026-01-08 22:10:28 | Epochs: 30, Max Steps: -1, Early Stop Patience: 5
+2026-01-08 22:10:28 | Base model: meta-llama/Meta-Llama-3-8B, LoRA r=8, alpha=32, dropout=0.05, target_modules=['q_proj', '"k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
+2026-01-08 22:10:28 | Max seq len: 40000, History len: 48, Horizon: 48, Stride: 48
+2026-01-08 22:10:28 | Patch len: 4, Patch stride: 4
+2026-01-08 22:10:28 | Description: This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market.
+2026-01-08 22:10:28 | news_dropout=0.6
+2026-01-08 22:10:28 | -----------------------------------------------------
+2026-01-08 22:10:28 | Device: cuda:0, Model dtype: torch.bfloat16
+2026-01-08 22:10:28 | Optimizer: AdamW, LR: 2e-05, Weight Decay: 0.0
+2026-01-08 22:10:28 | Scheduler: Cosine with Warmup, Total Steps: 477, Warmup Steps: 14
+2026-01-08 22:10:28 | Batch size: 1, Gradient Accumulation: 16, Effective Batch Size: 16
+2026-01-08 22:10:28 | Token budget: 1200 (history frac: 0.2, news frac: 0.5)
+2026-01-08 22:10:28 | -----------------------------------------------------
+2026-01-08 22:10:28 | DECISION_EPOCH_BEGIN epoch=2 sel_template=4 policy=keyword_sentiment_hybrid tpl_scores=[-3.2219, 6.4687, -4.2835, -4.884, 8.8774] pol_scores=[1.8595, -1.3293, 2.0833]
+2026-01-08 22:10:31 | BANDIT_ROUND round=1 tpl_id=4 policy=keyword_sentiment_hybrid probe_loss=157.670089 probe_mse=355021.504433 probe_mae=86.462560 reward_norm=0.000000
+2026-01-08 22:10:31 | EPOCH_BEGIN epoch=1, selected_template_id=4, selected_policy=keyword_sentiment_hybrid
+2026-01-08 22:11:12 | EVAL epoch=1 tpl_id=4 policy=keyword_sentiment_hybrid val_loss(zMSE)=157.149665 val_mse(raw)=255147.019775 val_mae(raw)=67.625788
+2026-01-08 22:11:12 | DECISION_EPOCH_BEGIN epoch=3 sel_template=3 policy=sentiment tpl_scores=[3.837, 5.0986, 1.9063, 12.4651, 0.4169] pol_scores=[-1.0023, 0.8837, -1.071]
+2026-01-08 22:11:14 | BANDIT_ROUND round=2 tpl_id=3 policy=sentiment probe_loss=157.153460 probe_mse=263079.415058 probe_mae=67.519961 reward_norm=0.300000
+2026-01-08 22:11:14 | EPOCH_BEGIN epoch=2, selected_template_id=3, selected_policy=sentiment
+2026-01-08 22:11:55 | EVAL epoch=2 tpl_id=3 policy=sentiment val_loss(zMSE)=158.159821 val_mse(raw)=291622.199062 val_mae(raw)=76.723186
+2026-01-08 22:11:55 | [Early Stop] stale_rounds=1/5 best=255147.019775
+2026-01-08 22:11:56 | DECISION_EPOCH_BEGIN epoch=4 sel_template=0 policy=sentiment tpl_scores=[0.9329, -4.8153, -10.5356, -0.4209, -0.1747] pol_scores=[-0.0863, 0.2502, -0.1856]
+2026-01-08 22:11:58 | BANDIT_ROUND round=3 tpl_id=0 policy=sentiment probe_loss=158.136607 probe_mse=295811.269440 probe_mae=74.665978 reward_norm=0.279587
+2026-01-08 22:11:58 | EPOCH_BEGIN epoch=3, selected_template_id=0, selected_policy=sentiment
+2026-01-08 22:12:40 | EVAL epoch=3 tpl_id=0 policy=sentiment val_loss(zMSE)=157.733036 val_mse(raw)=215968.409635 val_mae(raw)=58.562165
+2026-01-08 22:12:40 | DECISION_EPOCH_BEGIN epoch=5 sel_template=3 policy=keywords tpl_scores=[0.1682, 0.2625, 0.8959, 1.87, -1.9105] pol_scores=[0.5841, -0.3221, -0.6378]
+2026-01-08 22:12:43 | BANDIT_ROUND round=4 tpl_id=3 policy=keywords probe_loss=155.996987 probe_mse=228421.547715 probe_mae=63.456492 reward_norm=0.563412
+2026-01-08 22:12:43 | EPOCH_BEGIN epoch=4, selected_template_id=3, selected_policy=keywords
+2026-01-08 22:13:24 | EVAL epoch=4 tpl_id=3 policy=keywords val_loss(zMSE)=157.874721 val_mse(raw)=195220.378040 val_mae(raw)=52.688740
+2026-01-08 22:13:24 | DECISION_EPOCH_BEGIN epoch=6 sel_template=2 policy=keyword_sentiment_hybrid tpl_scores=[-0.7963, -7.0807, 4.1196, 0.7797, 1.3496] pol_scores=[-0.7565, 0.2563, 0.9226]
+2026-01-08 22:13:26 | BANDIT_ROUND round=5 tpl_id=2 policy=keyword_sentiment_hybrid probe_loss=157.900223 probe_mse=201616.681215 probe_mae=54.643640 reward_norm=0.770677
+2026-01-08 22:13:26 | EPOCH_BEGIN epoch=5, selected_template_id=2, selected_policy=keyword_sentiment_hybrid
+2026-01-08 22:14:08 | EVAL epoch=5 tpl_id=2 policy=keyword_sentiment_hybrid val_loss(zMSE)=157.658984 val_mse(raw)=186992.792951 val_mae(raw)=51.348222
+2026-01-08 22:14:08 | DECISION_EPOCH_BEGIN epoch=7 sel_template=0 policy=sentiment tpl_scores=[0.9603, -1.3814, 0.651, -0.5944, -0.8574] pol_scores=[0.3963, 1.0794, -0.3939]
+2026-01-08 22:14:10 | BANDIT_ROUND round=6 tpl_id=0 policy=sentiment probe_loss=157.651953 probe_mse=184422.257123 probe_mae=49.529129 reward_norm=0.902337
+2026-01-08 22:14:10 | EPOCH_BEGIN epoch=6, selected_template_id=0, selected_policy=sentiment
+2026-01-08 22:14:52 | EVAL epoch=6 tpl_id=0 policy=sentiment val_loss(zMSE)=157.876395 val_mse(raw)=186688.025607 val_mae(raw)=51.878338
+2026-01-08 22:14:52 | DECISION_EPOCH_BEGIN epoch=8 sel_template=3 policy=keywords tpl_scores=[-0.9474, -0.7892, -0.1268, 1.2263, -0.5714] pol_scores=[0.6559, 0.0425, -0.3895]
+2026-01-08 22:14:55 | BANDIT_ROUND round=7 tpl_id=3 policy=keywords probe_loss=157.922600 probe_mse=195365.099563 probe_mae=54.451629 reward_norm=0.896263
+2026-01-08 22:14:55 | EPOCH_BEGIN epoch=7, selected_template_id=3, selected_policy=keywords
+2026-01-08 22:15:36 | EVAL epoch=7 tpl_id=3 policy=keywords val_loss(zMSE)=157.905301 val_mse(raw)=188258.093530 val_mae(raw)=48.860541
+2026-01-08 22:15:36 | [Early Stop] stale_rounds=1/5 best=186688.025607
+2026-01-08 22:15:36 | DECISION_EPOCH_BEGIN epoch=9 sel_template=4 policy=keyword_sentiment_hybrid tpl_scores=[-0.1768, -1.2492, 1.0359, 0.0574, 0.3317] pol_scores=[0.2264, 0.9411, 0.6711]
+2026-01-08 22:15:39 | BANDIT_ROUND round=8 tpl_id=4 policy=keyword_sentiment_hybrid probe_loss=158.236830 probe_mse=210013.799415 probe_mae=53.369676 reward_norm=0.799465
+2026-01-08 22:15:39 | EPOCH_BEGIN epoch=8, selected_template_id=4, selected_policy=keyword_sentiment_hybrid
+2026-01-08 22:16:20 | EVAL epoch=8 tpl_id=4 policy=keyword_sentiment_hybrid val_loss(zMSE)=157.698382 val_mse(raw)=178127.892424 val_mae(raw)=47.362805
+2026-01-08 22:16:20 | DECISION_EPOCH_BEGIN epoch=10 sel_template=0 policy=keyword_sentiment_hybrid tpl_scores=[1.3553, -4.5016, -1.8867, 1.026, 0.0096] pol_scores=[-0.2657, 0.1688, 0.8289]
+2026-01-08 22:16:22 | BANDIT_ROUND round=9 tpl_id=0 policy=keyword_sentiment_hybrid probe_loss=157.537221 probe_mse=174910.754838 probe_mae=46.158217 reward_norm=0.876722
+2026-01-08 22:16:22 | EPOCH_BEGIN epoch=9, selected_template_id=0, selected_policy=keyword_sentiment_hybrid
+2026-01-08 22:17:05 | EVAL epoch=9 tpl_id=0 policy=keyword_sentiment_hybrid val_loss(zMSE)=157.801897 val_mse(raw)=180473.785162 val_mae(raw)=48.772392
+2026-01-08 22:17:05 | [Early Stop] stale_rounds=1/5 best=178127.892424
+2026-01-08 22:17:05 | DECISION_EPOCH_BEGIN epoch=11 sel_template=3 policy=keywords tpl_scores=[0.1613, 0.8148, 0.5416, 1.9391, 1.07] pol_scores=[1.2546, 0.6332, 0.9151]
+2026-01-08 22:17:07 | BANDIT_ROUND round=10 tpl_id=3 policy=keywords probe_loss=157.815011 probe_mse=183884.639078 probe_mae=51.257788 reward_norm=0.859374
+2026-01-08 22:17:07 | EPOCH_BEGIN epoch=10, selected_template_id=3, selected_policy=keywords
+2026-01-08 22:17:48 | EVAL epoch=10 tpl_id=3 policy=keywords val_loss(zMSE)=157.788058 val_mse(raw)=179256.760932 val_mae(raw)=46.769692
+2026-01-08 22:17:48 | [Early Stop] stale_rounds=2/5 best=178127.892424
+2026-01-08 22:17:48 | DECISION_EPOCH_BEGIN epoch=12 sel_template=2 policy=keywords tpl_scores=[-0.3295, -0.5146, 1.5283, 0.552, 0.1344] pol_scores=[0.9745, 0.214, 0.3689]
+2026-01-08 22:17:51 | BANDIT_ROUND round=11 tpl_id=2 policy=keywords probe_loss=157.819085 probe_mse=181530.425488 probe_mae=48.749276 reward_norm=0.840040
+2026-01-08 22:17:51 | EPOCH_BEGIN epoch=11, selected_template_id=2, selected_policy=keywords
+2026-01-08 22:18:32 | EVAL epoch=11 tpl_id=2 policy=keywords val_loss(zMSE)=157.728404 val_mse(raw)=180801.337095 val_mae(raw)=48.606547
+2026-01-08 22:18:32 | [Early Stop] stale_rounds=3/5 best=178127.892424
+2026-01-08 22:18:32 | DECISION_EPOCH_BEGIN epoch=13 sel_template=0 policy=keyword_sentiment_hybrid tpl_scores=[1.2616, -5.1953, 0.6377, 0.3942, 0.6598] pol_scores=[0.4199, 0.4061, 0.5918]
+2026-01-08 22:18:35 | BANDIT_ROUND round=12 tpl_id=0 policy=keyword_sentiment_hybrid probe_loss=157.728683 probe_mse=182321.803706 probe_mae=47.917944 reward_norm=0.806707
+2026-01-08 22:18:35 | EPOCH_BEGIN epoch=12, selected_template_id=0, selected_policy=keyword_sentiment_hybrid
+2026-01-08 22:19:17 | EVAL epoch=12 tpl_id=0 policy=keyword_sentiment_hybrid val_loss(zMSE)=157.942299 val_mse(raw)=178471.396091 val_mae(raw)=48.780329
+2026-01-08 22:19:17 | [Early Stop] stale_rounds=4/5 best=178127.892424
+2026-01-08 22:19:17 | DECISION_EPOCH_BEGIN epoch=14 sel_template=1 policy=sentiment tpl_scores=[0.7565, 1.9126, 0.9554, 0.256, -1.0454] pol_scores=[0.1961, 0.9747, 0.2658]
+2026-01-08 22:19:19 | BANDIT_ROUND round=13 tpl_id=1 policy=sentiment probe_loss=158.065960 probe_mse=188810.576117 probe_mae=53.454903 reward_norm=0.737442
+2026-01-08 22:19:19 | EPOCH_BEGIN epoch=13, selected_template_id=1, selected_policy=sentiment
