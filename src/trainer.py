@@ -1,28 +1,37 @@
-# trainer.py (REGRESSION version - full file)
+# trainer.py (REGRESSION version - full file)  [RESIDUAL BASE+DELTA, NO TRUE-vs-SHUFFLED]
+
+from __future__ import annotations
 
 import csv
-import os, json
+import gc
+import os
+import json
 import math
 from collections import deque
 
 import pandas as pd
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.optim import AdamW
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from transformers import get_cosine_schedule_with_warmup
 
+from src.data_construction.DataStatistic import DataStatistic
 from .utils.utils import set_seed, device_from_id
 from .data_construction.data import make_loader
 from .news_rules import load_news, get_candidates, select_news, _load_keywords
-from .data_construction.prompt import load_templates, format_news, build_prompt
+from .data_construction.prompt import format_news, load_templates, build_prompt
 from .RL.rl_bandit import LinTS, LinUCB, RewardNormalizer
 from .ValidationState import ValidationState
 from .utils.logger import setup_live_logger
 from .RL.features import bandit_select, get_context_features, encode_instruction
 
-from .model import load_llama_lora
+from .model import load_checkpoint, load_llama_lora, save_checkpoint
+from .residual_utils import freeze_module, zero_regressor_head, split_two_stage_epochs
+
+dataStatistic = DataStatistic()
 
 
 def _zstats(x, eps: float = 1e-6):
@@ -45,7 +54,7 @@ def _inv_zscore(z, mu, sigma):
 
 
 def _maybe_news_dropout(news_str: str, args) -> str:
-    p = args.news_dropout
+    p = float(getattr(args, "news_dropout", 0.0) or 0.0)
     if p <= 0:
         return news_str
     if np.random.rand() < p:
@@ -69,33 +78,55 @@ def _make_patches(seq: list[float], patch_len: int, stride: int):
         raise ValueError("patch_stride must be > 0")
 
     if L < patch_len:
-        # pad one patch
         p = np.zeros((1, patch_len), dtype=np.float32)
         p[0, :L] = x
         m = np.ones((1,), dtype=np.int64)
         return p, m
 
     idxs = list(range(0, L - patch_len + 1, stride))
-    patches = np.stack([x[i : i + patch_len] for i in idxs], axis=0).astype(np.float32)  # (P, patch_len)
+    patches = np.stack([x[i: i + patch_len] for i in idxs], axis=0).astype(np.float32)  # (P, patch_len)
     mask = np.ones((patches.shape[0],), dtype=np.int64)
     return patches, mask
 
 
 def history_text(history_z: list[float], mu: float, sigma: float) -> str:
-    """
-    Keep a brief textual history (optional). Main signal is via patch embeddings.
-    """
-
-    history_z_str = ", ".join([f"{v:.4f}" for v in history_z])
-
-
+    hz = np.asarray(history_z, dtype=np.float32)
+    last = hz.tolist() if len(hz) >= 8 else hz.tolist()
+    slope = float(hz[-1] - hz[-9]) if len(hz) >= 9 else float(hz[-1] - hz[0]) if len(hz) >= 2 else 0.0
     return (
-        f"History is z-scored using window mean={mu:.4f}, std={sigma:.4f}. "
-        f"Last {len(history_z)} z-values: {history_z_str}"
+        f"History z-scored (mu={mu:.4f}, std={sigma:.4f}). "
+        f"Last {len(last)} z: {', '.join([f'{v:.3f}' for v in last])}. "
+        f"Recent slope: {slope:.3f}."
     )
 
 
-def forward_batch_build_inputs(
+def _pad_2d_int(seqs: list[list[int]], pad_id: int) -> tuple[torch.Tensor, torch.Tensor]:
+    B = len(seqs)
+    max_t = max(len(s) for s in seqs) if B > 0 else 1
+    input_ids = torch.full((B, max_t), pad_id, dtype=torch.long)
+    attn = torch.zeros((B, max_t), dtype=torch.long)
+    for i, s in enumerate(seqs):
+        t = len(s)
+        if t == 0:
+            continue
+        input_ids[i, :t] = torch.tensor(s, dtype=torch.long)
+        attn[i, :t] = 1
+    return input_ids, attn
+
+
+def _pad_patches(patches_list: list[np.ndarray], mask_list: list[np.ndarray], patch_len: int) -> tuple[torch.Tensor, torch.Tensor]:
+    B = len(patches_list)
+    max_p = max(p.shape[0] for p in patches_list) if B > 0 else 1
+    ts_patches = torch.zeros((B, max_p, patch_len), dtype=torch.float32)
+    ts_patch_mask = torch.zeros((B, max_p), dtype=torch.long)
+    for i, (p, pm) in enumerate(zip(patches_list, mask_list)):
+        P_i = p.shape[0]
+        ts_patches[i, :P_i, :] = torch.tensor(p, dtype=torch.float32)
+        ts_patch_mask[i, :P_i] = torch.tensor(pm, dtype=torch.long)
+    return ts_patches, ts_patch_mask
+
+
+def build_batch_inputs(
     batch,
     tokenizer,
     templates,
@@ -107,171 +138,155 @@ def forward_batch_build_inputs(
     volatility_bin,
     epoch: int = -1,
     record_train_prompt: bool = False,
-    testing = False,
+    testing: bool = False,
+    force_no_news: bool = False,
+    news_dropout: bool = False,
 ):
     """
-    Build:
-      - prompt input_ids / attn (text only)
-      - ts_patches (z-scored history patches)
-      - patch_mask
-      - targets_z (z-scored targets)
-      - metas (mu/sigma + prompt text for debugging)
+    Returns:
+      input_ids, attn,
+      ts_patches, ts_patch_mask,
+      targets_z, metas,
+      prompt_texts
     """
     L, H = int(args.history_len), int(args.horizon)
-    hist_budget = int(args.token_budget * args.token_budget_history_frac)
     news_budget = int(args.token_budget * args.token_budget_news_frac)
 
     patch_len = int(getattr(args, "patch_len", 4))
     patch_stride = int(getattr(args, "patch_stride", patch_len))
 
-
     tpl_text = templates[tpl_id]["text"]
+    B = len(batch["history_value"])
 
-    input_ids_list = []
-    attn_list = []
-
+    targets_z_list = []
     patches_list = []
     patchmask_list = []
-
-    targets_list = []
     metas = []
-    prompt_texts = []
 
-    for i in range(len(batch["history_value"])):
+    hist_strs = []
+    news_str_list = []
+
+    start_dates = []
+    end_dates = []
+    pred_starts = []
+    pred_ends = []
+
+    len_selected_news = []
+
+    for i in range(B):
         history = batch["history_value"][i].tolist()
         target = batch["target_value"][i].tolist()
         t_target = batch["target_time"][i]
 
-        cand = get_candidates(news_df, args.news_time_col, t_target, args.news_window_days, args.news_topM)
-        selected = select_news(cand, policy_name, args.news_text_col, policy_kw, args.news_topK)
-
-        # z-score based on this sample's history window
         mu, sigma = _zstats(history, eps=float(getattr(args, "zscore_eps", 1e-6)))
         history_z = _zscore(history, mu, sigma)
         target_z = _zscore(target, mu, sigma)
 
-        # patches from z-scored history (main numeric signal)
         p, pm = _make_patches(history_z, patch_len=patch_len, stride=patch_stride)
 
-        # news string (text)
-        news_str = format_news(
-            selected,
-            args.news_text_col,
-            news_budget,
-            tokenizer,
-            summary_method=args.news_summary_method,
-            max_sentences=args.news_max_sentences,
-        )
-        if not testing:
-            news_str = _maybe_news_dropout(news_str, args)
+        # news
+        if force_no_news or (news_df is None) or (len(news_df) == 0) or (policy_name == "none"):
+            selected = pd.DataFrame(columns=[args.news_time_col, args.news_text_col])
+        else:
+            cand = get_candidates(news_df, args.news_time_col, t_target, args.news_window_days, args.news_topM)
+            selected = select_news(cand, policy_name, args.news_text_col, policy_kw, args.news_topK)
 
+        len_selected_news.append(len(selected))
+
+        news_str = ""
+        if not force_no_news and len(selected) > 0:
+            news_str = format_news(
+                selected,
+                args.news_text_col,
+                news_budget,
+                tokenizer,
+                summary_method=args.news_summary_method,
+                max_sentences=args.news_max_sentences,
+            )
+            if news_dropout:
+                news_str = _maybe_news_dropout(news_str, args)
+
+        # time meta for prompt
         start_date = batch["history_times"][0][i]
         end_date = batch["history_times"][-1][i]
         prediction_start = batch["target_times"][0][i]
         prediction_end = batch["target_times"][-1][i]
 
-        # brief history text only (do NOT dump full numeric list)
-        hist_str = history_text(history_z, mu, sigma)
+        targets_z_list.append(np.asarray(target_z, dtype=np.float32))
+        patches_list.append(p)
+        patchmask_list.append(pm)
+        metas.append({"mu": mu, "sigma": sigma})
 
-        # build prompt text (NO output slots, NO target appended)
+        hist_strs.append(history_text(history_z, mu, sigma))
+        news_str_list.append(news_str)
+
+        start_dates.append(start_date)
+        end_dates.append(end_date)
+        pred_starts.append(prediction_start)
+        pred_ends.append(prediction_end)
+
+    # tokenize prompts
+    ids_list = []
+    prompt_texts = []
+
+    for i in range(B):
         prompt = build_prompt(
             tpl_text,
             L,
             H,
             args.unit,
             args.description,
-            hist_str,
-            news_str,
-            start_date=start_date,
-            end_date=end_date,
+            hist_strs[i],
+            news_str_list[i],
+            start_date=start_dates[i],
+            end_date=end_dates[i],
             freq=args.freq_min,
             value_col=args.value_col,
-            pred_end=prediction_end,
-            pred_start=prediction_start,
+            pred_end=pred_ends[i],
+            pred_start=pred_starts[i],
             region=args.region,
         )
+        prompt = prompt + "\n\n[Output]\n" + f"Predict the next {H} steps (internally as z-values).\n"
 
-        # optional: keep a small output-format instruction, but model will regress from hidden states anyway
-        prompt = (
-            prompt
-            + "\n\n[Output]\n"
-            + f"Predict the next {H} steps (internally as z-values). Do not output numbers.\n"
-        )
+        # stats (only track once per call; you were tracking per prompt anyway)
+        dataStatistic.news_num_stats_update(len_selected_news[i], prompt=prompt)
 
         enc = tokenizer(
             prompt,
             add_special_tokens=False,
             truncation=True,
             max_length=int(args.max_seq_len),
-            return_attention_mask=True,
+            return_attention_mask=False,  # we build attn ourselves for speed
         )
-        ids = enc["input_ids"]
-        am = enc["attention_mask"]
-
-        input_ids_list.append(ids)
-        attn_list.append(am)
-
-        patches_list.append(p)       # (P_i, patch_len)
-        patchmask_list.append(pm)    # (P_i,)
-
-        targets_list.append(np.asarray(target_z, dtype=np.float32))  # (H,)
-
-        meta = {"mu": mu, "sigma": sigma}
-        metas.append(meta)
+        ids_list.append(enc["input_ids"])
         prompt_texts.append(prompt)
 
         if record_train_prompt:
             ckpt_dir = os.path.join("./checkpoints", args.taskName)
             os.makedirs(ckpt_dir, exist_ok=True)
-            prompt_path = os.path.join(ckpt_dir, f"prompts_{args.taskName}.jsonl")
+            prompt_path = os.path.join(ckpt_dir, f"prompts_{args.taskName}.json")
+            rec = {
+                "batch_idx": i,
+                "epoch_num": epoch + 1,
+                "template_id": int(tpl_id),
+                "policy": str(policy_name),
+                "force_no_news": bool(force_no_news),
+                "prompt": prompt,
+                "mu": float(metas[i]["mu"]),
+                "sigma": float(metas[i]["sigma"]),
+            }
             with open(prompt_path, "a", encoding="utf-8") as f:
-                f.write(
-                    json.dumps(
-                        {
-                            "batch_idx": i,
-                            "epoch_num": epoch + 1,
-                            "template_id": tpl_id,
-                            "prompt": prompt,
-                            "mu": mu,
-                            "sigma": sigma,
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    # pad text
-    max_t = max(len(x) for x in input_ids_list)
-    pad_id = tokenizer.pad_token_id
-
-    B = len(input_ids_list)
-    input_ids = torch.full((B, max_t), pad_id, dtype=torch.long)
-    attn = torch.zeros((B, max_t), dtype=torch.long)
-
-    for i, (ids, am) in enumerate(zip(input_ids_list, attn_list)):
-        t = len(ids)
-        input_ids[i, :t] = torch.tensor(ids, dtype=torch.long)
-        attn[i, :t] = torch.tensor(am, dtype=torch.long)
-
-    # pad patches
-    max_p = max(p.shape[0] for p in patches_list)
-    patch_len = int(getattr(args, "patch_len", 4))
-
-    ts_patches = torch.zeros((B, max_p, patch_len), dtype=torch.float32)
-    ts_patch_mask = torch.zeros((B, max_p), dtype=torch.long)
-
-    for i, (p, pm) in enumerate(zip(patches_list, patchmask_list)):
-        P_i = p.shape[0]
-        ts_patches[i, :P_i, :] = torch.tensor(p, dtype=torch.float32)
-        ts_patch_mask[i, :P_i] = torch.tensor(pm, dtype=torch.long)
-
-    targets_z = torch.stack([torch.tensor(t, dtype=torch.float32) for t in targets_list], dim=0)  # (B, H)
+    input_ids, attn = _pad_2d_int(ids_list, pad_id=tokenizer.pad_token_id)
+    ts_patches, ts_patch_mask = _pad_patches(patches_list, patchmask_list, patch_len=patch_len)
+    targets_z = torch.stack([torch.tensor(t, dtype=torch.float32) for t in targets_z_list], dim=0)
 
     return input_ids, attn, ts_patches, ts_patch_mask, targets_z, metas, prompt_texts
 
 
 @torch.no_grad()
-def evaluate_metrics(
+def evaluate_metrics_single(
     model,
     tokenizer,
     data_loader,
@@ -285,12 +300,15 @@ def evaluate_metrics(
     volatility_bin,
     testing: bool = False,
     true_pred_csv_path: str | None = None,
+    news_dropout: bool = False,
+    force_no_news: bool = False,
 ):
     """
+    Single-model evaluation: used for BASE stage.
     Returns:
-      - loss_avg: z-space MSE loss (training objective)
-      - mse_avg: original-scale MSE
-      - mae_avg: original-scale MAE
+      - loss_avg: z-space MSE
+      - mse_avg: raw-scale MSE
+      - mae_avg: raw-scale MAE
     """
     model.eval()
 
@@ -300,22 +318,24 @@ def evaluate_metrics(
     if testing:
         ckpt_dir = os.path.join("./checkpoints", args.taskName)
         os.makedirs(ckpt_dir, exist_ok=True)
-        ans_jsonl_path = os.path.join(ckpt_dir, f"test_answers_{args.taskName}.jsonl")
+        ans_json_path = os.path.join(ckpt_dir, f"test_answers_{args.taskName}.json")
 
-    for bidx, batch in enumerate(data_loader):
-        input_ids, attn, ts_patches, ts_patch_mask, targets_z, metas, prompt_texts = forward_batch_build_inputs(
-            batch,
-            tokenizer,
-            templates,
-            tpl_id,
-            args,
-            news_df,
-            policy_name,
-            policy_kw,
+    for _, batch in enumerate(data_loader):
+        input_ids, attn, ts_patches, ts_patch_mask, targets_z, metas, prompt_texts = build_batch_inputs(
+            batch=batch,
+            tokenizer=tokenizer,
+            templates=templates,
+            tpl_id=tpl_id,
+            args=args,
+            news_df=news_df,
+            policy_name=policy_name,
+            policy_kw=policy_kw,
             volatility_bin=volatility_bin,
             epoch=-1,
             record_train_prompt=False,
             testing=testing,
+            force_no_news=force_no_news,
+            news_dropout=news_dropout,
         )
 
         input_ids = input_ids.to(device)
@@ -332,20 +352,20 @@ def evaluate_metrics(
             targets=targets_z,
         )
         loss = out["loss"]
-        pred_z = out["pred"]  # (B, H)
+        pred_z = out["pred"]
 
         bs = input_ids.size(0)
         loss_sum += float(loss.detach().cpu()) * bs
         n_samples += bs
 
         pred_z_cpu = pred_z.detach().to(torch.float32).cpu().numpy()
-        targets_cpu = batch["target_value"].detach().cpu().numpy()  # (B, H) raw scale
+        targets_cpu = batch["target_value"].detach().cpu().numpy()  # raw
 
         for i in range(bs):
             mu = float(metas[i]["mu"])
             sigma = float(metas[i]["sigma"])
 
-            pred_denorm = _inv_zscore(pred_z_cpu[i].tolist(), mu, sigma)  # list H
+            pred_denorm = _inv_zscore(pred_z_cpu[i].tolist(), mu, sigma)
             true_vals = targets_cpu[i].reshape(-1).tolist()
             true_vals = [float(x) for x in true_vals[: int(args.horizon)]]
 
@@ -370,7 +390,155 @@ def evaluate_metrics(
                     "mu": mu,
                     "sigma": sigma,
                 }
-                with open(ans_jsonl_path, "a", encoding="utf-8") as f:
+                with open(ans_json_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    loss_avg = loss_sum / max(1, n_samples)
+    mse_avg = se_sum / max(1, n_elems) if n_elems > 0 else float("inf")
+    mae_avg = ae_sum / max(1, n_elems) if n_elems > 0 else float("inf")
+    return loss_avg, mse_avg, mae_avg
+
+
+@torch.no_grad()
+def evaluate_metrics_residual(
+    base_model,
+    delta_model,
+    tokenizer,
+    data_loader,
+    templates,
+    tpl_id,
+    args,
+    news_df,
+    policy_name,
+    policy_kw,
+    device,
+    volatility_bin,
+    testing: bool = False,
+    true_pred_csv_path: str | None = None,
+    news_dropout: bool = False,
+):
+    """
+    Residual evaluation: pred = base(no-news) + delta(with-news)
+    Returns combined metrics.
+    """
+    base_model.eval()
+    delta_model.eval()
+
+    loss_sum, n_samples = 0.0, 0
+    se_sum, ae_sum, n_elems = 0.0, 0.0, 0
+
+    if testing:
+        ckpt_dir = os.path.join("./checkpoints", args.taskName)
+        os.makedirs(ckpt_dir, exist_ok=True)
+        ans_json_path = os.path.join(ckpt_dir, f"test_answers_{args.taskName}.json")
+
+    for _, batch in enumerate(data_loader):
+        # build delta (with news)
+        ids_d, attn_d, ts_p, ts_pm, targets_z, metas, prompt_texts = build_batch_inputs(
+            batch=batch,
+            tokenizer=tokenizer,
+            templates=templates,
+            tpl_id=tpl_id,
+            args=args,
+            news_df=news_df,
+            policy_name=policy_name,
+            policy_kw=policy_kw,
+            volatility_bin=volatility_bin,
+            epoch=-1,
+            record_train_prompt=False,
+            testing=testing,
+            force_no_news=False,
+            news_dropout=news_dropout,
+        )
+        # build base (no news) -- reuse patches/targets, only rebuild text ids
+        ids_b, attn_b, _, _, _, _, _ = build_batch_inputs(
+            batch=batch,
+            tokenizer=tokenizer,
+            templates=templates,
+            tpl_id=tpl_id,
+            args=args,
+            news_df=news_df,
+            policy_name="none",
+            policy_kw=policy_kw,
+            volatility_bin=volatility_bin,
+            epoch=-1,
+            record_train_prompt=False,
+            testing=False,
+            force_no_news=True,
+            news_dropout=False,
+        )
+
+        ids_d = ids_d.to(device)
+        attn_d = attn_d.to(device)
+        ids_b = ids_b.to(device)
+        attn_b = attn_b.to(device)
+
+        ts_p = ts_p.to(device)
+        ts_pm = ts_pm.to(device)
+        targets_z = targets_z.to(device)
+
+        out_base = base_model(
+            input_ids=ids_b,
+            attention_mask=attn_b,
+            ts_patches=ts_p,
+            ts_patch_mask=ts_pm,
+            targets=None,
+        )
+        base_pred = out_base["pred"]
+
+        out_delta = delta_model(
+            input_ids=ids_d,
+            attention_mask=attn_d,
+            ts_patches=ts_p,
+            ts_patch_mask=ts_pm,
+            targets=None,
+        )
+        delta_pred = out_delta["pred"]
+
+        pred_z = base_pred + delta_pred
+
+        # z-space loss (combined objective)
+        loss = F.mse_loss(pred_z.to(torch.float32), targets_z.to(torch.float32), reduction="mean")
+
+        bs = ids_d.size(0)
+        loss_sum += float(loss.detach().cpu()) * bs
+        n_samples += bs
+
+        pred_z_cpu = pred_z.detach().to(torch.float32).cpu().numpy()
+        targets_cpu = batch["target_value"].detach().cpu().numpy()  # raw
+
+        for i in range(bs):
+            mu = float(metas[i]["mu"])
+            sigma = float(metas[i]["sigma"])
+
+            pred_denorm = _inv_zscore(pred_z_cpu[i].tolist(), mu, sigma)
+            true_vals = targets_cpu[i].reshape(-1).tolist()
+            true_vals = [float(x) for x in true_vals[: int(args.horizon)]]
+
+            pred = np.asarray(pred_denorm, dtype=np.float32)
+            true = np.asarray(true_vals, dtype=np.float32)
+
+            se_sum += float(((pred - true) ** 2).sum())
+            ae_sum += float(np.abs(pred - true).sum())
+            n_elems += int(args.horizon)
+
+            if true_pred_csv_path is not None:
+                with open(true_pred_csv_path, "a", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerows(zip(pred_denorm, true_vals))
+
+            if testing:
+                record = {
+                    "test_prompt": prompt_texts[i],
+                    "pred_z": [float(x) for x in pred_z_cpu[i].tolist()],
+                    "pred": [float(x) for x in pred_denorm],
+                    "true": [float(x) for x in true_vals],
+                    "mu": mu,
+                    "sigma": sigma,
+                    "policy": str(policy_name),
+                    "template_id": int(tpl_id),
+                }
+                with open(ans_json_path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     loss_avg = loss_sum / max(1, n_samples)
@@ -478,8 +646,9 @@ def make_tpl_feature_fn(templates, add_one_hot=True, add_cost_proxy=False, add_c
     return tpl_features, feat_dim
 
 
-def bandit_round_update(
-    model,
+def bandit_round_update_residual(
+    base_model,
+    delta_model,
     tokenizer,
     probe_loader,
     templates,
@@ -500,7 +669,9 @@ def bandit_round_update(
     bidx,
     global_step,
 ):
-    model.eval()
+    base_model.eval()
+    delta_model.eval()
+
     cand = bandit_select(
         args,
         context_vector,
@@ -515,25 +686,26 @@ def bandit_round_update(
         bidx=bidx,
         global_step=global_step,
     )
-
     tpl_id = cand["tpl_id"]
     policy_name = cand["policy_name"]
     pol_idx = cand["pol_idx"]
 
-    probe_loss, probe_mse, probe_mae = evaluate_metrics(
-        model,
-        tokenizer,
-        probe_loader,
-        templates,
-        tpl_id,
-        args,
-        news_df,
-        policy_name,
-        policy_kw,
-        device,
+    probe_loss, probe_mse, probe_mae = evaluate_metrics_residual(
+        base_model=base_model,
+        delta_model=delta_model,
+        tokenizer=tokenizer,
+        data_loader=probe_loader,
+        templates=templates,
+        tpl_id=tpl_id,
+        args=args,
+        news_df=news_df,
+        policy_name=policy_name,
+        policy_kw=policy_kw,
+        device=device,
         volatility_bin=volatility_bin,
         testing=False,
         true_pred_csv_path=None,
+        news_dropout=False,
     )
 
     if args.reward_metric == "loss":
@@ -555,7 +727,7 @@ def bandit_round_update(
     bandit_pol.update(x_pol, r_hat)
 
     live_logger.info(
-        f"BANDIT_ROUND round={round_id} tpl_id={tpl_id} policy={policy_name} "
+        f"BANDIT_ROUND(residual) round={round_id} tpl_id={tpl_id} policy={policy_name} "
         f"probe_loss={probe_loss:.6f} probe_mse={probe_mse:.6f} probe_mae={probe_mae:.6f} "
         f"reward_norm={r_hat:.6f}"
     )
@@ -564,23 +736,23 @@ def bandit_round_update(
 
 
 def main(args):
-    filename = "log_rl_" + str(args.rl_use) + "_epoch_" + str(args.epochs) + "_" + args.taskName
+    filename = "log_residual_epoch_" + str(args.epochs) + "_" + args.taskName
     log_filename = filename + ".log"
     live_logger, live_path, log_jsonl = setup_live_logger(
         save_dir=args.save_dir + "/" + args.taskName, filename=log_filename
     )
     print(f"[live log] {live_path}  (实时查看: tail -f '{live_path}')")
 
-    # clean outputs
     ckpt_dir = os.path.join("./checkpoints", args.taskName)
     os.makedirs(ckpt_dir, exist_ok=True)
 
-    prompt_path = os.path.join(ckpt_dir, f"prompts_{args.taskName}.jsonl")
+    # clean outputs
+    prompt_path = os.path.join(ckpt_dir, f"prompts_{args.taskName}.json")
     with open(prompt_path, "w", encoding="utf-8"):
         pass
 
-    ans_jsonl_path = os.path.join(ckpt_dir, f"test_answers_{args.taskName}.jsonl")
-    with open(ans_jsonl_path, "w", encoding="utf-8"):
+    ans_json_path = os.path.join(ckpt_dir, f"test_answers_{args.taskName}.json")
+    with open(ans_json_path, "w", encoding="utf-8"):
         pass
 
     true_pred_csv_path = os.path.join(ckpt_dir, f"true_pred_{args.taskName}.csv")
@@ -641,6 +813,7 @@ def main(args):
         dayFirst=args.dayFirst,
     )
 
+    # news
     news_df = pd.DataFrame(columns=[args.news_time_col, args.news_text_col])
     news_df[args.news_time_col] = pd.to_datetime(news_df[args.news_time_col], dayfirst=args.dayFirst)
     if args.news_path:
@@ -650,45 +823,6 @@ def main(args):
     templates = load_templates(args.template_pool)
 
     patch_len = int(getattr(args, "patch_len", 4))
-
-    tokenizer, model = load_llama_lora(
-        base_model=args.base_model,
-        tokenizer_id=args.tokenizer,
-        lora_r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        target_modules=args.target_modules,
-        load_in_4bit=args.load_in_4bit,
-        gradient_checkpointing=args.gradient_checkpointing,
-        max_seq_len=args.max_seq_len,
-        device=device,
-        horizon=args.horizon,
-        patch_dim=patch_len,
-        patch_dropout=float(getattr(args, "patch_dropout", 0.0)),
-        head_dropout=float(getattr(args, "head_dropout", 0.0)),
-        head_mlp=bool(getattr(args, "head_mlp", False)),
-    )
-    model.to(device)
-
-    optim = AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()),
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-    )
-
-    num_batches = len(train_loader)
-    total_opt_steps = math.ceil((num_batches * args.epochs * args.rl_cycle_steps) / max(1, args.grad_accum))
-    warmup_steps = int(getattr(args, "warmup_ratio", 0.1) * total_opt_steps)
-
-    assert args.lr > 0, f"args.lr is {args.lr}"
-    assert total_opt_steps > 0, f"total_opt_steps is {total_opt_steps}"
-    assert warmup_steps < total_opt_steps, f"warmup_steps >= total_opt_steps ({warmup_steps} >= {total_opt_steps})"
-
-    scheduler = get_cosine_schedule_with_warmup(
-        optim,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_opt_steps,
-    )
 
     volatility_bin = compute_volatility_bin(
         train_df,
@@ -715,50 +849,250 @@ def main(args):
         dayfirst=args.dayFirst,
     )
 
+    # two-stage split (configurable via args.residual_base_frac / args.residual_base_epochs)
+    base_frac = float(getattr(args, "residual_base_frac", 0.3))
+    base_epochs, delta_epochs = split_two_stage_epochs(
+        total_epochs=int(args.epochs),
+        base_frac=base_frac,
+        min_base=int(getattr(args, "residual_min_base_epochs", 1)),
+        min_delta=int(getattr(args, "residual_min_delta_epochs", 1)),
+    )
+    if getattr(args, "residual_base_epochs", None) is not None:
+        base_epochs = int(getattr(args, "residual_base_epochs"))
+        base_epochs = max(0, min(base_epochs, int(args.epochs) - 1))
+        delta_epochs = int(args.epochs) - base_epochs
+
     live_logger.info("-----------------------------------------------------")
-    live_logger.info(
-        f"Training samples: {len(train_loader.dataset)}, Validation samples: {len(val_loader.dataset)}, Test samples: {len(test_loader.dataset)}"
-    )
-    live_logger.info(
-        f"Training started with volatility bins: trainset={volatility_bin}, valset={volatility_bin_val}, testset={volatility_bin_test}"
-    )
-    live_logger.info(f"Volatility bin tiers: {args.volatility_bin_tiers}")
-    live_logger.info("-----------------------------------------------------")
-    live_logger.info(
-        f"RL settings: rl_use={args.rl_use}, rl_algo={args.rl_algo}, reward_metric={args.reward_metric}, reward_mode={args.reward_mode}, "
-        f"select_policy_by={args.select_policy_by}, rl_cycle_steps={args.rl_cycle_steps}, rl_update_times={args.rl_update_times}"
-    )
-    live_logger.info("-----------------------------------------------------")
-    live_logger.info(f"Templates loaded: {len(templates)} templates from {args.template_pool}")
-    live_logger.info(f"news_topK={args.news_topK}, news_topM={args.news_topM}, news_window_days={args.news_window_days}")
-    live_logger.info(
-        f"News retrieval policy keywords loaded from: {args.keyword_path}, total number of policy keywords: {len(policy_kw)}"
-    )
-    live_logger.info(f"Epochs: {args.epochs}, Max Steps: {args.max_steps}, Early Stop Patience: {args.early_stop_patience}")
-    live_logger.info(
-        f"Base model: {args.base_model}, LoRA r={args.lora_r}, alpha={args.lora_alpha}, dropout={args.lora_dropout}, target_modules={args.target_modules}"
-    )
-    live_logger.info(
-        f"Max seq len: {args.max_seq_len}, History len: {args.history_len}, Horizon: {args.horizon}, Stride: {args.stride}"
-    )
-    live_logger.info(f"Patch len: {getattr(args, 'patch_len', 4)}, Patch stride: {getattr(args, 'patch_stride', getattr(args,'patch_len',4))}")
-    live_logger.info(f"Description: {args.description}")
-    live_logger.info(f"news_dropout={getattr(args, 'news_dropout', 0.0)}")
-    live_logger.info("-----------------------------------------------------")
-    live_logger.info(f"Device: {device}, Model dtype: {next(model.parameters()).dtype}")
-    live_logger.info(f"Optimizer: AdamW, LR: {args.lr}, Weight Decay: {args.weight_decay}")
-    live_logger.info(f"Scheduler: Cosine with Warmup, Total Steps: {total_opt_steps}, Warmup Steps: {warmup_steps}")
-    live_logger.info(
-        f"Batch size: {args.batch_size}, Gradient Accumulation: {args.grad_accum}, Effective Batch Size: {args.batch_size * args.grad_accum}"
-    )
-    live_logger.info(
-        f"Token budget: {args.token_budget} (history frac: {args.token_budget_history_frac}, news frac: {args.token_budget_news_frac})"
-    )
+    live_logger.info(f"Residual training enabled: BASE epochs={base_epochs}, DELTA epochs={delta_epochs}")
+    live_logger.info("True-vs-shuffled is fully removed.")
     live_logger.info("-----------------------------------------------------")
 
+    lora_cfg = {
+        "r": int(args.lora_r),
+        "alpha": int(args.lora_alpha),
+        "dropout": float(args.lora_dropout),
+        "target_modules": args.target_modules,
+    }
+
+    # ============ STAGE 1: Train BASE (force_no_news=True) ============
+    live_logger.info("======== Stage 1/2: Training BASE (no news) ========")
+
+    tokenizer, base_train_model = load_llama_lora(
+        base_model=args.base_model,
+        tokenizer_id=args.tokenizer,
+        lora_r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        target_modules=args.target_modules,
+        load_in_4bit=args.load_in_4bit,
+        gradient_checkpointing=args.gradient_checkpointing,
+        max_seq_len=args.max_seq_len,
+        device=device,
+        horizon=args.horizon,
+        patch_dim=patch_len,
+        patch_dropout=float(getattr(args, "patch_dropout", 0.0)),
+        head_dropout=float(getattr(args, "head_dropout", 0.0)),
+        head_mlp=bool(getattr(args, "head_mlp", False)),
+    )
+    base_train_model.to(device)
+
+    optim_base = AdamW(
+        filter(lambda p: p.requires_grad, base_train_model.parameters()),
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+    )
+
+    num_batches = len(train_loader)
+    total_opt_steps_base = math.ceil((num_batches * max(1, base_epochs) * args.rl_cycle_steps) / max(1, args.grad_accum))
+    warmup_steps_base = int(getattr(args, "warmup_ratio", 0.1) * total_opt_steps_base)
+    warmup_steps_base = min(warmup_steps_base, max(0, total_opt_steps_base - 1))
+
+    scheduler_base = get_cosine_schedule_with_warmup(
+        optim_base,
+        num_warmup_steps=warmup_steps_base,
+        num_training_steps=total_opt_steps_base,
+    )
+
+    # Base stage: RL is not meaningful (no-news). We keep tpl_id fixed.
+    allowed_tpl_ids = sorted([t["id"] for t in templates.values()])
+    tpl_id = allowed_tpl_ids[0]
+    policy_name_base = "none"
+
+    best_base_metric = float("inf")
+    stale_rounds = 0
+    loss_window = deque(maxlen=50)
+    base_val_loss_per_epoch, base_mse_per_epoch, base_mae_per_epoch = [], [], []
+
+    global_step = 0
+
+    for epoch in range(base_epochs):
+        pbar = tqdm(train_loader, desc=f"[BASE] Epoch {epoch+1}/{base_epochs}")
+
+        for _, batch in enumerate(pbar):
+            input_ids, attn, ts_patches, ts_patch_mask, targets_z, metas, _ = build_batch_inputs(
+                batch=batch,
+                tokenizer=tokenizer,
+                templates=templates,
+                tpl_id=tpl_id,
+                args=args,
+                news_df=news_df,
+                policy_name=policy_name_base,
+                policy_kw=policy_kw,
+                volatility_bin=volatility_bin,
+                epoch=epoch,
+                record_train_prompt=True,
+                testing=False,
+                force_no_news=True,
+                news_dropout=False,
+            )
+
+            input_ids = input_ids.to(device)
+            attn = attn.to(device)
+            ts_patches = ts_patches.to(device)
+            ts_patch_mask = ts_patch_mask.to(device)
+            targets_z = targets_z.to(device)
+
+            for _ in range(args.rl_cycle_steps):
+                base_train_model.train()
+                out = base_train_model(
+                    input_ids=input_ids,
+                    attention_mask=attn,
+                    ts_patches=ts_patches,
+                    ts_patch_mask=ts_patch_mask,
+                    targets=targets_z,
+                )
+                loss = out["loss"] / args.grad_accum
+                loss.backward()
+
+                loss_window.append(float(loss.detach().cpu()))
+                if global_step % 10 == 0:
+                    avg_train_loss = sum(loss_window) / len(loss_window)
+                    pbar.set_postfix(train_loss=f"{avg_train_loss:.6f}")
+
+                if (global_step + 1) % args.grad_accum == 0:
+                    optim_base.step()
+                    scheduler_base.step()
+                    optim_base.zero_grad(set_to_none=True)
+
+                global_step += 1
+
+        val_loss, val_mse, val_mae = evaluate_metrics_single(
+            model=base_train_model,
+            tokenizer=tokenizer,
+            data_loader=val_loader,
+            templates=templates,
+            tpl_id=tpl_id,
+            args=args,
+            news_df=news_df,
+            policy_name=policy_name_base,
+            policy_kw=policy_kw,
+            device=device,
+            volatility_bin=volatility_bin_val,
+            testing=False,
+            true_pred_csv_path=None,
+            news_dropout=False,
+            force_no_news=True,
+        )
+        base_val_loss_per_epoch.append(val_loss)
+        base_mse_per_epoch.append(val_mse)
+        base_mae_per_epoch.append(val_mae)
+
+        if args.reward_metric == "loss":
+            metric_now = val_loss
+        elif args.reward_metric == "mse":
+            metric_now = val_mse
+        else:
+            metric_now = val_mae
+
+        live_logger.info(
+            f"[BASE][EVAL] epoch={epoch+1} tpl_id={tpl_id} "
+            f"val_loss(zMSE)={val_loss:.6f} val_mse(raw)={val_mse:.6f} val_mae(raw)={val_mae:.6f}"
+        )
+
+        if metric_now < best_base_metric - 1e-6:
+            best_base_metric = metric_now
+            stale_rounds = 0
+            best_base_path = os.path.join(f"./checkpoints/{args.taskName}", f"best_base_{args.taskName}")
+            if os.path.isfile(best_base_path):
+                os.remove(best_base_path)
+
+            save_checkpoint(
+                best_base_path,
+                tokenizer,
+                base_train_model,
+                base_model_id=args.base_model,
+                tokenizer_id=args.tokenizer or args.base_model,
+                lora_cfg=lora_cfg,
+                optimizer=optim_base,
+                scheduler=scheduler_base,
+                epoch=epoch,
+                global_step=global_step,
+            )
+            live_logger.info(f"[BASE] New best saved to {best_base_path} ({args.reward_metric}={best_base_metric:.6f})")
+        else:
+            stale_rounds += 1
+            live_logger.info(f"[BASE] stale_rounds={stale_rounds}/{args.early_stop_patience} best={best_base_metric:.6f}")
+
+        if stale_rounds >= args.early_stop_patience:
+            live_logger.info(f"[BASE] Early stopping triggered at epoch {epoch+1}.")
+            break
+
+    # Free base training model memory (we will reload base best)
+    del base_train_model
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    best_base_path = os.path.join(f"./checkpoints/{args.taskName}", f"best_base_{args.taskName}")
+    if not os.path.exists(best_base_path):
+        raise FileNotFoundError(f"Base checkpoint not found: {best_base_path}")
+
+    # ============ STAGE 2: Train DELTA (residual) ============
+    live_logger.info("======== Stage 2/2: Training DELTA (news -> residual) ========")
+
+    # teacher base (frozen)
+    base_tok, base_model = load_checkpoint(
+        best_base_path,
+        load_in_4bit=args.load_in_4bit,
+        gradient_checkpointing=args.gradient_checkpointing,
+        device_map=None,
+        is_trainable=False,
+    )
+    # keep tokenizer consistent
+    tokenizer = base_tok
+    base_model.to(device)
+    freeze_module(base_model)
+
+    # delta model init from base checkpoint but trainable
+    _, delta_model = load_checkpoint(
+        best_base_path,
+        load_in_4bit=args.load_in_4bit,
+        gradient_checkpointing=args.gradient_checkpointing,
+        device_map=None,
+        is_trainable=True,
+    )
+    delta_model.to(device)
+    # important: start delta head near zero so it predicts small residual by default
+    zero_regressor_head(delta_model)
+
+    optim_delta = AdamW(
+        filter(lambda p: p.requires_grad, delta_model.parameters()),
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+    )
+
+    total_opt_steps_delta = math.ceil((len(train_loader) * max(1, delta_epochs) * args.rl_cycle_steps) / max(1, args.grad_accum))
+    warmup_steps_delta = int(getattr(args, "warmup_ratio", 0.1) * total_opt_steps_delta)
+    warmup_steps_delta = min(warmup_steps_delta, max(0, total_opt_steps_delta - 1))
+
+    scheduler_delta = get_cosine_schedule_with_warmup(
+        optim_delta,
+        num_warmup_steps=warmup_steps_delta,
+        num_training_steps=total_opt_steps_delta,
+    )
+
+    # RL setup for DELTA stage
     normalizer = RewardNormalizer(ema=args.reward_ema, use_group_norm=args.domain_reward_norm)
     val_state = ValidationState(ema_alpha=args.val_ema_alpha)
-
     context_vector = encode_instruction(args, ctx={}, volatility_bin=volatility_bin)
 
     tpl_features, feat_dim = make_tpl_feature_fn(
@@ -775,59 +1109,56 @@ def main(args):
     policy_space = ["keywords", "sentiment", "keyword_sentiment_hybrid"]
     bandit_pol = LinTS(d_pol, v=args.ts_v) if args.rl_algo == "lints" else LinUCB(d_pol, alpha=args.ucb_alpha)
 
-    global_step = 0
     best_metric = float("inf")
     stale_rounds = 0
     loss_window = deque(maxlen=50)
 
     tpl_id = allowed_tpl_ids[0]
-    policy_name = policy_space[0]
+    policy_name = "none"
+    best_tpl_id = tpl_id
+    best_policy_name = policy_name
 
-    val_loss_per_epoch = []
-    mse_loss_per_epoch = []
-    mae_loss_per_epoch = []
+    val_loss_per_epoch, mse_loss_per_epoch, mae_loss_per_epoch = [], [], []
 
     def draw_metric_trend():
         p = f"./checkpoints/{args.taskName}"
         os.makedirs(p, exist_ok=True)
         epochs = list(range(1, len(val_loss_per_epoch) + 1))
-        xlabel = "Epoch"
 
         plt.figure()
-        plt.plot(epochs, val_loss_per_epoch, label="Val Loss (z-MSE)")
-        plt.xlabel(xlabel)
+        plt.plot(epochs, val_loss_per_epoch, label="Val Loss (z-MSE, combined)")
+        plt.xlabel("Epoch")
         plt.ylabel("Loss")
-        plt.title("Validation Loss (z-space MSE)")
+        plt.title("Validation Loss (combined z-space MSE)")
         plt.legend()
         plt.grid(True)
         fig_path = os.path.join(p, f"ValLoss_{args.taskName}.png")
         plt.savefig(fig_path, dpi=200, bbox_inches="tight")
         plt.close()
-        live_logger.info(f"Saved loss curve to {fig_path}")
 
         plt.figure()
-        plt.plot(epochs, mse_loss_per_epoch, label="Val MSE (raw)")
-        plt.xlabel(xlabel)
+        plt.plot(epochs, mse_loss_per_epoch, label="Val MSE (raw, combined)")
+        plt.xlabel("Epoch")
         plt.ylabel("MSE")
-        plt.title("Validation MSE (raw scale)")
+        plt.title("Validation MSE (combined raw scale)")
         plt.legend()
         plt.grid(True)
         fig_path = os.path.join(p, f"ValMSE_{args.taskName}.png")
         plt.savefig(fig_path, dpi=200, bbox_inches="tight")
         plt.close()
-        live_logger.info(f"Saved validation MSE curve to {fig_path}")
 
         plt.figure()
-        plt.plot(epochs, mae_loss_per_epoch, label="Val MAE (raw)")
-        plt.xlabel(xlabel)
+        plt.plot(epochs, mae_loss_per_epoch, label="Val MAE (raw, combined)")
+        plt.xlabel("Epoch")
         plt.ylabel("MAE")
-        plt.title("Validation MAE (raw scale)")
+        plt.title("Validation MAE (combined raw scale)")
         plt.legend()
         plt.grid(True)
         fig_path = os.path.join(p, f"ValMAE_{args.taskName}.png")
         plt.savefig(fig_path, dpi=200, bbox_inches="tight")
         plt.close()
-        live_logger.info(f"Saved validation MAE curve to {fig_path}")
+
+        live_logger.info(f"Saved metric curves under {p}")
 
     def record_test_results_csv(mse, mae):
         try:
@@ -855,7 +1186,7 @@ def main(args):
             plt.plot(df["pred"], label="Predicted Values")
             plt.xlabel("Sample Index")
             plt.ylabel("Values")
-            plt.title("Predicted and True Values")
+            plt.title("Predicted and True Values (combined)")
             plt.legend()
             plt.grid(True)
             fig_path = os.path.join(p, f"PredVsTrue_{args.taskName}.png")
@@ -865,8 +1196,8 @@ def main(args):
         except Exception as e:
             live_logger.error(f"Failed to draw Pred vs True plot: {e}")
 
-    for epoch in range(args.epochs):
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")
+    for epoch in range(delta_epochs):
+        pbar = tqdm(train_loader, desc=f"[DELTA] Epoch {epoch+1}/{delta_epochs}")
 
         # epoch-level bandit selection (optional)
         if (args.select_policy_by == "epoch") and args.rl_use == 1:
@@ -881,8 +1212,9 @@ def main(args):
                 volatility_bin=volatility_bin,
             )
 
-            tpl_id, policy_name, pol_idx = bandit_round_update(
-                model=model,
+            tpl_id, policy_name, pol_idx = bandit_round_update_residual(
+                base_model=base_model,
+                delta_model=delta_model,
                 tokenizer=tokenizer,
                 probe_loader=val_loader,
                 templates=templates,
@@ -903,10 +1235,8 @@ def main(args):
                 bidx=None,
                 global_step=global_step,
             )
+            live_logger.info(f"[DELTA] EPOCH_BEGIN epoch={epoch+1}, tpl_id={tpl_id}, policy={policy_name}")
 
-            live_logger.info(f"EPOCH_BEGIN epoch={epoch+1}, selected_template_id={tpl_id}, selected_policy={policy_name}")
-
-        # training batches
         for bidx, batch in enumerate(pbar):
             # batch-level bandit selection (optional)
             if (args.select_policy_by == "batch") and args.rl_use == 1:
@@ -921,8 +1251,9 @@ def main(args):
                     volatility_bin=volatility_bin,
                 )
 
-                tpl_id, policy_name, pol_idx = bandit_round_update(
-                    model=model,
+                tpl_id, policy_name, pol_idx = bandit_round_update_residual(
+                    base_model=base_model,
+                    delta_model=delta_model,
                     tokenizer=tokenizer,
                     probe_loader=val_loader,
                     templates=templates,
@@ -944,37 +1275,75 @@ def main(args):
                     global_step=global_step,
                 )
 
-            input_ids, attn, ts_patches, ts_patch_mask, targets_z, metas, _ = forward_batch_build_inputs(
-                batch,
-                tokenizer,
-                templates,
-                tpl_id,
-                args,
-                news_df,
-                policy_name,
-                policy_kw,
+            # build delta inputs (with news)
+            ids_d, attn_d, ts_p, ts_pm, targets_z, metas, _ = build_batch_inputs(
+                batch=batch,
+                tokenizer=tokenizer,
+                templates=templates,
+                tpl_id=tpl_id,
+                args=args,
+                news_df=news_df,
+                policy_name=policy_name,
+                policy_kw=policy_kw,
                 volatility_bin=volatility_bin,
                 epoch=epoch,
                 record_train_prompt=True,
+                testing=False,
+                force_no_news=False,
+                news_dropout=False,
+            )
+            # build base text inputs (no news)
+            ids_b, attn_b, _, _, _, _, _ = build_batch_inputs(
+                batch=batch,
+                tokenizer=tokenizer,
+                templates=templates,
+                tpl_id=tpl_id,
+                args=args,
+                news_df=news_df,
+                policy_name="none",
+                policy_kw=policy_kw,
+                volatility_bin=volatility_bin,
+                epoch=epoch,
+                record_train_prompt=False,
+                testing=False,
+                force_no_news=True,
+                news_dropout=False,
             )
 
-            input_ids = input_ids.to(device)
-            attn = attn.to(device)
-            ts_patches = ts_patches.to(device)
-            ts_patch_mask = ts_patch_mask.to(device)
+            ids_d = ids_d.to(device)
+            attn_d = attn_d.to(device)
+            ids_b = ids_b.to(device)
+            attn_b = attn_b.to(device)
+
+            ts_p = ts_p.to(device)
+            ts_pm = ts_pm.to(device)
             targets_z = targets_z.to(device)
 
             for _ in range(args.rl_cycle_steps):
-                model.train()
-                out = model(
-                    input_ids=input_ids,
-                    attention_mask=attn,
-                    ts_patches=ts_patches,
-                    ts_patch_mask=ts_patch_mask,
-                    targets=targets_z,
+                delta_model.train()
+
+                # teacher base pred (no grad)
+                with torch.no_grad():
+                    out_base = base_model(
+                        input_ids=ids_b,
+                        attention_mask=attn_b,
+                        ts_patches=ts_p,
+                        ts_patch_mask=ts_pm,
+                        targets=None,
+                    )
+                    base_pred = out_base["pred"]
+
+                # residual target
+                delta_targets = targets_z - base_pred.detach()
+
+                out_delta = delta_model(
+                    input_ids=ids_d,
+                    attention_mask=attn_d,
+                    ts_patches=ts_p,
+                    ts_patch_mask=ts_pm,
+                    targets=delta_targets,
                 )
-                loss = out["loss"]
-                loss = loss / args.grad_accum
+                loss = out_delta["loss"] / args.grad_accum
                 loss.backward()
 
                 loss_window.append(float(loss.detach().cpu()))
@@ -983,84 +1352,169 @@ def main(args):
                     pbar.set_postfix(train_loss=f"{avg_train_loss:.6f}")
 
                 if (global_step + 1) % args.grad_accum == 0:
-                    optim.step()
-                    scheduler.step()
-                    optim.zero_grad(set_to_none=True)
+                    optim_delta.step()
+                    scheduler_delta.step()
+                    optim_delta.zero_grad(set_to_none=True)
 
                 global_step += 1
 
-        # end-of-epoch eval (now cheap and stable; no generate/parsing)
-        val_loss, val_mse, val_mae = evaluate_metrics(
-            model,
-            tokenizer,
-            val_loader,
-            templates,
-            tpl_id,
-            args,
-            news_df,
-            policy_name,
-            policy_kw,
-            device,
+        # end-of-epoch eval (combined)
+        val_loss, val_mse, val_mae = evaluate_metrics_residual(
+            base_model=base_model,
+            delta_model=delta_model,
+            tokenizer=tokenizer,
+            data_loader=val_loader,
+            templates=templates,
+            tpl_id=tpl_id,
+            args=args,
+            news_df=news_df,
+            policy_name=policy_name,
+            policy_kw=policy_kw,
+            device=device,
             volatility_bin=volatility_bin_val,
             testing=False,
             true_pred_csv_path=None,
+            news_dropout=False,
         )
         val_loss_per_epoch.append(val_loss)
         mse_loss_per_epoch.append(val_mse)
         mae_loss_per_epoch.append(val_mae)
 
         live_logger.info(
-            f"EVAL epoch={epoch+1} tpl_id={tpl_id} policy={policy_name} "
+            f"[DELTA][EVAL] epoch={epoch+1} tpl_id={tpl_id} policy={policy_name} "
             f"val_loss(zMSE)={val_loss:.6f} val_mse(raw)={val_mse:.6f} val_mae(raw)={val_mae:.6f}"
         )
 
-        # update state for bandit context if you use it
+        # update val_state for context
         if args.reward_metric == "loss":
             val_state.update(val_loss)
-        elif args.reward_metric == "mse":
-            val_state.update(val_mse)
-        else:
-            val_state.update(val_mae)
-
-        # early stopping on reward metric
-        if args.reward_metric == "loss":
             metric_now = val_loss
         elif args.reward_metric == "mse":
+            val_state.update(val_mse)
             metric_now = val_mse
         else:
+            val_state.update(val_mae)
             metric_now = val_mae
 
         if metric_now < best_metric - 1e-6:
             best_metric = metric_now
             stale_rounds = 0
+            best_tpl_id = tpl_id
+            best_policy_name = policy_name
+
+            best_delta_path = os.path.join(f"./checkpoints/{args.taskName}", f"best_delta_{args.taskName}")
+            if os.path.isfile(best_delta_path):
+                os.remove(best_delta_path)
+
+            save_checkpoint(
+                best_delta_path,
+                tokenizer,
+                delta_model,
+                base_model_id=args.base_model,
+                tokenizer_id=args.tokenizer or args.base_model,
+                lora_cfg=lora_cfg,
+                optimizer=optim_delta,
+                scheduler=scheduler_delta,
+                epoch=epoch,
+                global_step=global_step,
+            )
+
+            # write a small meta pointer so testing knows how to load pair
+            with open(os.path.join(f"./checkpoints/{args.taskName}", "residual_pair.json"), "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "best_base": f"best_base_{args.taskName}",
+                        "best_delta": f"best_delta_{args.taskName}",
+                        "best_tpl_id": int(best_tpl_id),
+                        "best_policy_name": str(best_policy_name),
+                        "reward_metric": str(args.reward_metric),
+                        "best_metric": float(best_metric),
+                    },
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+            live_logger.info(f"[DELTA] New best delta saved: {best_delta_path} ({args.reward_metric}={best_metric:.6f})")
         else:
             stale_rounds += 1
-            live_logger.info(f"[Early Stop] stale_rounds={stale_rounds}/{args.early_stop_patience} best={best_metric:.6f}")
+            live_logger.info(f"[DELTA] stale_rounds={stale_rounds}/{args.early_stop_patience} best={best_metric:.6f}")
 
         if stale_rounds >= args.early_stop_patience:
-            live_logger.info(f"Early stopping triggered at epoch {epoch+1}.")
+            live_logger.info(f"[DELTA] Early stopping triggered at epoch {epoch+1}.")
             break
 
-    draw_metric_trend()
+        # log data statistics at first delta epoch
+        if epoch == 0:
+            live_logger.info("---------------------trainset and valset prompt statistics--------------------------------")
+            live_logger.info(f"Prompt number: {dataStatistic.prompt_num}")
+            live_logger.info(f"News number total: {dataStatistic.news_num_total}")
+            live_logger.info(f"Max news number per prompt: {dataStatistic.max_news_num_per_prompt}")
+            live_logger.info(f"Min news number per prompt: {dataStatistic.min_news_num_per_prompt}")
+            live_logger.info(f"Mean news number per prompt: {dataStatistic.mean_news_num_per_prompt}")
+            live_logger.info(f"Prompt with max news number: {dataStatistic.the_prompt_with_most_news_num}")
+            live_logger.info(f"Prompt with max news length: {dataStatistic.prompt_with_max_news_len}")
+            live_logger.info(f"Prompt with max total length: {dataStatistic.prompt_with_max_total_len}")
+            live_logger.info("-----------------------------------------------------")
 
+    # end of training
+    draw_metric_trend()
+    dataStatistic.clear()
+
+    # ============ TEST (combined with best pair) ============
     if test_loader is not None:
-        test_loss, test_mse, test_mae = evaluate_metrics(
-            model,
-            tokenizer,
-            test_loader,
-            templates,
-            tpl_id,
-            args,
-            news_df,
-            policy_name,
-            policy_kw,
-            device,
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        best_base_path = os.path.join(f"./checkpoints/{args.taskName}", f"best_base_{args.taskName}")
+        best_delta_path = os.path.join(f"./checkpoints/{args.taskName}", f"best_delta_{args.taskName}")
+
+        tok_b, base_best = load_checkpoint(best_base_path, args.load_in_4bit, args.gradient_checkpointing, None, False)
+        tok_d, delta_best = load_checkpoint(best_delta_path, args.load_in_4bit, args.gradient_checkpointing, None, False)
+
+        # enforce same tokenizer reference
+        tokenizer = tok_d
+        base_best.to(device)
+        delta_best.to(device)
+        freeze_module(base_best)
+
+        live_logger.info("Loaded best BASE + DELTA for testing (combined).")
+
+        # choose best tpl/policy if RL used, else current
+        tpl_for_test = best_tpl_id if args.rl_use == 1 else tpl_id
+        pol_for_test = best_policy_name if args.rl_use == 1 else policy_name
+
+        test_loss, test_mse, test_mae = evaluate_metrics_residual(
+            base_model=base_best,
+            delta_model=delta_best,
+            tokenizer=tokenizer,
+            data_loader=test_loader,
+            templates=templates,
+            tpl_id=tpl_for_test,
+            args=args,
+            news_df=news_df,
+            policy_name=pol_for_test,
+            policy_kw=policy_kw,
+            device=device,
             volatility_bin=volatility_bin_test,
             testing=True,
             true_pred_csv_path=true_pred_csv_path,
+            news_dropout=False,
         )
+
+        live_logger.info("---------------------testset prompt statistics--------------------------------")
+        live_logger.info(f"Prompt number: {dataStatistic.prompt_num}")
+        live_logger.info(f"News number total: {dataStatistic.news_num_total}")
+        live_logger.info(f"Max news number per prompt: {dataStatistic.max_news_num_per_prompt}")
+        live_logger.info(f"Min news number per prompt: {dataStatistic.min_news_num_per_prompt}")
+        live_logger.info(f"Mean news number per prompt: {dataStatistic.mean_news_num_per_prompt}")
+        live_logger.info(f"Prompt with max news number: {dataStatistic.the_prompt_with_most_news_num}")
+        live_logger.info(f"Prompt with max news length = {dataStatistic.newslen_prompt_with_max_news_len}: {dataStatistic.prompt_with_max_news_len}")
+        live_logger.info(f"Prompt with max total length = {len(dataStatistic.prompt_with_max_total_len)}: {dataStatistic.prompt_with_max_total_len}")
         live_logger.info("-----------------------------------------------------")
-        tqdm.write(f"[TEST] loss(zMSE)={test_loss:.6f} mse(raw)={test_mse:.6f} mae(raw)={test_mae:.6f}")
-        live_logger.info(f"[TEST] loss(zMSE)={test_loss:.6f} mse(raw)={test_mse:.6f} mae(raw)={test_mae:.6f}")
+
+        tqdm.write(f"[TEST][COMBINED] loss(zMSE)={test_loss:.6f} mse(raw)={test_mse:.6f} mae(raw)={test_mae:.6f}")
+        live_logger.info(f"[TEST][COMBINED] loss(zMSE)={test_loss:.6f} mse(raw)={test_mse:.6f} mae(raw)={test_mae:.6f}")
+
         record_test_results_csv(test_mse, test_mae)
         draw_pred_true()
