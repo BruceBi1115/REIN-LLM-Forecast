@@ -2,8 +2,9 @@
   - id: 1
     name: "Pure"
     text: |
-      You are a forecasting assistant. The historical {value_col} is: {HISTORY}
-      From {start_date} to {end_date}, sampled every {freq} minutes.Please provide your main forecast for the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
+      Now you have a dataset from {region} with description: {description}
+      You are a domain-agnostic time series analyst. The historical {value_col} is: {HISTORY}. The history is from {start_date} to {end_date}, sampled every {freq} minutes.
+      Please provide your main forecast for the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
 
 
     has_example: false

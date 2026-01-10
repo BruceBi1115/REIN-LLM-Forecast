@@ -4,16 +4,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from peft import LoraConfig, get_peft_model
-
+from peft import LoraConfig, get_peft_model, PeftModel
+import os
+import json
 END_TOKEN = "<END>"
-PRED_TOKEN_PREFIX = "<PRED_"
 
-
-def build_pred_slots(horizon: int) -> str:
-    return " ".join([f"<PRED_{i}>" for i in range(int(horizon))])
-
-
+pd = 0.2
+hd = 0.2
 class TSForecastRegressor(nn.Module):
     """
     Text + (time-series patches as soft tokens) -> LLM -> pool patch hidden states -> regression head -> H values
@@ -30,8 +27,8 @@ class TSForecastRegressor(nn.Module):
         horizon: int,
         patch_dim: int,
         hidden_size: int,
-        patch_dropout: float = 0.0,
-        head_dropout: float = 0.0,
+        patch_dropout: float = pd,
+        head_dropout: float = hd,
         head_mlp: bool = False,
     ):
         super().__init__()
@@ -98,6 +95,10 @@ class TSForecastRegressor(nn.Module):
         if patch_emb.dtype != tok_dtype:
             patch_emb = patch_emb.to(dtype=tok_dtype)
 
+        if self.training and getattr(self, "patch_mask_p", 0.0) > 0:
+            # (B,P,1)
+            keep = (torch.rand(patch_emb.size(0), patch_emb.size(1), 1, device=patch_emb.device) > self.patch_mask_p).to(patch_emb.dtype)
+            patch_emb = patch_emb * keep
         # concat as "soft tokens": [text_tokens, patch_tokens]
         inputs_embeds = torch.cat([tok_emb, patch_emb], dim=1)  # (B, T+P, H)
         attn = torch.cat([attention_mask, ts_patch_mask], dim=1)  # (B, T+P)
@@ -196,3 +197,149 @@ def load_llama_lora(
     )
 
     return tok, model
+
+
+
+def save_checkpoint(
+    ckpt_dir: str,
+    tok,
+    model,                      # TSForecastRegressor
+    base_model_id: str,
+    tokenizer_id: str | None,
+    lora_cfg: dict,
+    optimizer=None,
+    scheduler=None,
+    epoch: int | None = None,
+    global_step: int | None = None,
+):
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    # 1) tokenizer（包含你 add_special_tokens 之后的版本）
+    tok_dir = os.path.join(ckpt_dir, "tokenizer")
+    tok.save_pretrained(tok_dir)
+
+    # 2) LoRA adapter（只保存 PEFT 参数，体积小）——HF 推荐用 save_pretrained() 复用 :contentReference[oaicite:0]{index=0}
+    adapter_dir = os.path.join(ckpt_dir, "adapter")
+    model.lm.save_pretrained(adapter_dir, safe_serialization=True)
+
+    # 3) 你自定义的回归部分（patch_proj + head）
+    reg_path = os.path.join(ckpt_dir, "regressor.pt")
+    torch.save(
+        {
+            "patch_proj": model.patch_proj.state_dict(),
+            "head": model.head.state_dict(),
+            "horizon": model.horizon,
+            "patch_dim": model.patch_dim,
+            "hidden_size": model.hidden_size,
+        },
+        reg_path,
+    )
+
+    # 4) meta（用于“精确复现”加载）
+    meta = {
+        "base_model_id": base_model_id,
+        "tokenizer_id": tokenizer_id or base_model_id,
+        "lora_cfg": lora_cfg,  # r/alpha/dropout/target_modules 等
+        "horizon": int(model.horizon),
+        "patch_dim": int(model.patch_dim),
+        "hidden_size": int(model.hidden_size),
+    }
+    with open(os.path.join(ckpt_dir, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+
+    # 5)（可选）断点续训：optimizer/scheduler/epoch/step/RNG
+    if optimizer is not None:
+        state = {
+            "optimizer": optimizer.state_dict(),
+            "epoch": epoch,
+            "global_step": global_step,
+            "rng_state": torch.get_rng_state(),
+        }
+        if torch.cuda.is_available():
+            state["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
+        if scheduler is not None:
+            state["scheduler"] = scheduler.state_dict()
+
+        torch.save(state, os.path.join(ckpt_dir, "trainer_state.pt"))
+
+
+def load_checkpoint(
+    ckpt_dir: str,
+    load_in_4bit: bool = False,
+    gradient_checkpointing: bool = False,
+    device_map=None,
+    is_trainable: bool = False,   # True=继续训练；False=纯推理
+):
+    # 0) meta
+    with open(os.path.join(ckpt_dir, "meta.json"), "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    base_model_id = meta["base_model_id"]
+    horizon = int(meta["horizon"])
+    patch_dim = int(meta["patch_dim"])
+
+    # 1) tokenizer（加载保存过的）
+    tok = AutoTokenizer.from_pretrained(os.path.join(ckpt_dir, "tokenizer"), use_fast=True)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+        tok.pad_token_id = tok.eos_token_id
+
+    # 2) base model（注意 dtype / device_map / 量化要和你训练环境匹配）
+    base = AutoModelForCausalLM.from_pretrained(
+        base_model_id,
+        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto" if device_map is None else device_map,
+        load_in_4bit=load_in_4bit,
+    )
+
+    # 关键：对齐 embedding size（你训练时 add_special_tokens 后 resize 过）
+    base.resize_token_embeddings(len(tok))
+
+    if gradient_checkpointing:
+        base.gradient_checkpointing_enable()
+
+    # 3) attach LoRA adapter（从 adapter/ 恢复）:contentReference[oaicite:2]{index=2}
+    adapter_dir = os.path.join(ckpt_dir, "adapter")
+    lm = PeftModel.from_pretrained(base, adapter_dir, is_trainable=is_trainable)
+
+    # 4) rebuild TSForecastRegressor 并加载 regressor 权重
+    hidden_size = lm.config.hidden_size
+    model = TSForecastRegressor(
+        lm=lm,
+        horizon=horizon,
+        patch_dim=patch_dim,
+        hidden_size=hidden_size,
+        patch_dropout=pd,
+        head_dropout=hd,
+        head_mlp=False,
+    )
+
+    reg = torch.load(os.path.join(ckpt_dir, "regressor.pt"), map_location="cpu")
+    model.patch_proj.load_state_dict(reg["patch_proj"], strict=True)
+    model.head.load_state_dict(reg["head"], strict=True)
+
+    # ✅ 关键：移动自定义层到GPU
+    emb = model.lm.get_input_embeddings().weight
+    model.patch_proj = model.patch_proj.to(emb.device, dtype=emb.dtype)
+    model.head = model.head.to(emb.device, dtype=emb.dtype)
+
+
+
+    return tok, model
+
+# 6) （可选）加载训练状态
+def load_trainer_state(ckpt_dir: str, optimizer, scheduler=None):
+    path = os.path.join(ckpt_dir, "trainer_state.pt")
+    if not os.path.exists(path):
+        return None
+
+    st = torch.load(path, map_location="cpu")
+    optimizer.load_state_dict(st["optimizer"])
+    if scheduler is not None and "scheduler" in st:
+        scheduler.load_state_dict(st["scheduler"])
+
+    torch.set_rng_state(st["rng_state"])
+    if torch.cuda.is_available() and "cuda_rng_state_all" in st:
+        torch.cuda.set_rng_state_all(st["cuda_rng_state_all"])
+
+    return st  # 里面有 epoch/global_step

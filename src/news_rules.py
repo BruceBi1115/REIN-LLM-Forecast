@@ -276,6 +276,8 @@ def select_news(cand: pd.DataFrame, policy: str, text_col: str,
         return select_by_sentiment(cand, text_col, K)
     if policy == 'keyword_sentiment_hybrid':
         return keyword_sentiment_hybrid(cand, text_col, policy_kw, K)
+    if policy == 'none':
+        return cand
     
     return cand
 

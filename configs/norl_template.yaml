@@ -2,9 +2,10 @@
   - id: 1
     name: "Norl"
     text: |
-      You are a forecasting assistant. The historical {value_col} is: {HISTORY}
+      Now you have a dataset from {region} with description: {description}
+      You are a domain-agnostic time series analyst. The historical {value_col} is: {HISTORY}. The history is from {start_date} to {end_date}, sampled every {freq} minutes.
       The news can influence the time series forecasting as follows: {NEWS}
-      From {start_date} to {end_date}, sampled every {freq} minutes. Please provide your main forecast for the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
+      Please provide your main forecast for the data from {pred_start} to {pred_end} with a frequency of {freq} minutes.
 
     has_example: false
     has_breath: false

@@ -16,6 +16,26 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42, help='random seed')
     parser.add_argument('--precision', type=str, default='bf16', choices=['fp32', 'fp16', 'bf16'],
                         help='training precision/mixed precision mode')
+    
+
+    # ===== Ranking Loss =====
+    # use_rank_loss（默认 True）
+    parser.add_argument('--use_rank_loss', type=bool, default=True, help='use ranking loss for RL? (0/1)')
+    # rank_beta（默认 0.5）
+    parser.add_argument('--rank_beta', type=float, default=0.5, help='beta for ranking loss')
+    # rank_margin（默认 0.05）
+    parser.add_argument('--rank_margin', type=float, default=0.05, help='margin for ranking loss')
+    # rank_shuf_mode：batch_shift（默认）/ global_random / no_news
+    parser.add_argument('--rank_shuf_mode', type=str, default='no_news', choices=['batch_shift', 'global_random', 'no_news'],
+                        help='shuffling mode for ranking loss')
+    # 可选：rank_apply_news_dropout（默认 False）
+    parser.add_argument('--rank_apply_news_dropout', type=bool, default=False, help='apply news dropout when computing rank loss?')
+    # 可选：rank_b1_use_global_random（默认 True）
+    parser.add_argument('--rank_b1_use_global_random', type=bool, default=False, help='for b=1 sample, use global random shuffling?')
+
+    # patch_mask_p
+    parser.add_argument('--patch_mask_p', type=float, default=0.4, help='patch token masking probability during training')
+
 
     # ===== Data & Instruction =====
     parser.add_argument('--data_root', type=str, default='./dataset', help='root folder for datasets')
@@ -81,15 +101,15 @@ if __name__ == '__main__':
 
     #===== Token budget fractions =====
     parser.add_argument('--token_budget_history_frac', type=float, default=0.2, help='budget frac for history')
-    parser.add_argument('--token_budget_news_frac', type=float, default=0.5, help='budget frac for news')
-    parser.add_argument('--token_budget_instr_frac', type=float, default=0.3, help='budget frac for instruction')
+    parser.add_argument('--token_budget_news_frac', type=float, default=0.6, help='budget frac for news')
+    parser.add_argument('--token_budget_instr_frac', type=float, default=0.2, help='budget frac for instruction')
 
     # ===== LLaMA =====
     parser.add_argument('--base_model', type=str, default='meta-llama/Meta-Llama-3-8B', help='HF model id or local path')
     parser.add_argument('--tokenizer', type=str, default='', help='HF tokenizer id (default: same as base_model)')
     parser.add_argument('--load_in_4bit', action='store_true', help='use 4-bit quantization (QLoRA)')
     parser.add_argument('--gradient_checkpointing', action='store_true', help='enable gradient checkpointing')
-    parser.add_argument('--max_seq_len', type=int, default=40000, help='max sequence length')
+    parser.add_argument('--max_seq_len', type=int, default=1000, help='max sequence length')
 
     # LoRA hyperparameters
     parser.add_argument('--lora_r', type=int, default=8, help='LoRA rank')
@@ -101,7 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=0.0, help='weight decay')
     parser.add_argument('--warmup_ratio', type=float, default=0.03, help='warmup ratio')
     parser.add_argument('--batch_size', type=int, default=2, help='micro batch size per device')
-    parser.add_argument('--grad_accum', type=int, default=16, help='gradient accumulation steps')
+    parser.add_argument('--grad_accum', type=int, default=12, help='gradient accumulation steps')
     parser.add_argument('--epochs', type=int, default=3, help='outer epochs over the dataset')
     parser.add_argument('--max_steps', type=int, default=-1, help='override total steps if >0')
     # parser.add_argument('--eval_interval', type=int, default=200, help='validate every N steps')

@@ -1,63 +1,178 @@
 # # sh scripts/nswelecprice/elecpricenorl.sh
 # # sh scripts/nswelecprice/elecpricepure.sh
 
-python run.py \
-    --taskName '[Pure]NSW2015To2016ElectricityPriceWithNews' \
-    --time_col 'SETTLEMENTDATE'\
-    --value_col 'RRP'\
-    --unit "$/MWh" \
-    --description "This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market." \
-    --region "Australia, NSW"\
-    --dayFirst True \
-    --train_file dataset/2015-2016NSWelecprice/2015To2016NSWData_trainset.csv \
-    --val_file dataset/2015-2016NSWelecprice/2015To2016NSWData_valset.csv \
-    --test_file dataset/2015-2016NSWelecprice/2015To2016NSWData_testset.csv \
-    --news_text_col 'summary_response' \
-    --news_time_col 'date' \
-    --keyword_path 'keywords/kws.txt' \
-    --epochs 30\
-    --keyword_number 20 \
-    --news_window_days 1 \
-    --news_topM 999 \
-    --news_topK 10 \
-    --batch_size 1\
-    --rl_use 0 \
-    --rl_algo "lints" \
-    --reward_metric "mse" \
-    --rl_cycle_steps 1 \
-    --select_policy_by "epoch" \
-    --template_pool configs/pure_template.yaml
-
-python run.py \
-    --taskName '[NoRL]NSW2015To2016ElectricityPriceWithNews' \
-    --time_col 'SETTLEMENTDATE'\
-    --value_col 'RRP'\
-    --unit "$/MWh" \
-    --description "This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market." \
-    --region "Australia, NSW"\
-    --news_path dataset/Summarized_news_2015_2020.json \
-    --dayFirst True \
-    --train_file dataset/2015-2016NSWelecprice/2015To2016NSWData_trainset.csv \
-    --val_file dataset/2015-2016NSWelecprice/2015To2016NSWData_valset.csv \
-    --test_file dataset/2015-2016NSWelecprice/2015To2016NSWData_testset.csv \
-    --news_text_col 'summary_response' \
-    --news_time_col 'date' \
-    --keyword_path 'keywords/kws.txt' \
-    --epochs 30\
-    --keyword_number 20 \
-    --news_window_days 1 \
-    --news_topM 999 \
-    --news_topK 10 \
-    --batch_size 1\
-    --rl_use 0 \
-    --rl_algo "lints" \
-    --reward_metric "mse" \
-    --rl_cycle_steps 1 \
-    --select_policy_by "epoch" \
-    --template_pool configs/norl_template.yaml
-    
 # python run.py \
-#     --taskName '[NoNews]NSW2015To2016ElectricityPriceWithNews' \
+#     --taskName '[Pure]NSW2018To2020ElectricityPriceWithNews' \
+#     --time_col 'SETTLEMENTDATE'\
+#     --value_col 'RRP'\
+#     --unit "$/MWh" \
+#     --description "This dataset records the electricity price data in Australia NSW from 2018 to 2020, collected from National electricity market." \
+#     --region "Australia, NSW"\
+#     --dayFirst True \
+#     --train_file dataset/2018-2020NSWelecprice/2018To2020NSWData_trainset.csv \
+#     --val_file dataset/2018-2020NSWelecprice/2018To2020NSWData_valset.csv \
+#     --test_file dataset/2018-2020NSWelecprice/2018To2020NSWData_testset.csv \
+#     --news_text_col 'summary_response' \
+#     --news_time_col 'date' \
+#     --keyword_path 'keywords/kws.txt' \
+#     --epochs 30\
+#     --keyword_number 20 \
+#     --news_window_days 7 \
+#     --news_topM 999 \
+#     --news_topK 999 \
+#     --batch_size 1\
+#     --rl_use 0 \
+#     --rl_algo "lints" \
+#     --reward_metric "mse" \
+#     --rl_cycle_steps 1 \
+#     --select_policy_by "epoch" \
+#     --template_pool configs/pure_template.yaml
+
+# python run.py \
+#     --taskName '[NoRL]NSW2018To2020ElectricityPriceWithNews' \
+#     --time_col 'SETTLEMENTDATE'\
+#     --value_col 'RRP'\
+#     --unit "$/MWh" \
+#     --description "This dataset records the electricity price data in Australia NSW from 2018 to 2020, collected from National electricity market." \
+#     --region "Australia, NSW"\
+#     --news_path dataset/Summarized_news_2015_2020.json \
+#     --dayFirst True \
+#     --train_file dataset/2018-2020NSWelecprice/2018To2020NSWData_trainset.csv \
+#     --val_file dataset/2018-2020NSWelecprice/2018To2020NSWData_valset.csv \
+#     --test_file dataset/2018-2020NSWelecprice/2018To2020NSWData_testset.csv \
+#     --news_text_col 'summary_response' \
+#     --news_time_col 'date' \
+#     --keyword_path 'keywords/kws.txt' \
+#     --epochs 30\
+#     --keyword_number 20 \
+#     --news_window_days 7 \
+#     --news_topM 999 \
+#     --news_topK 999 \
+#     --batch_size 1\
+#     --rl_use 0 \
+#     --rl_algo "lints" \
+#     --reward_metric "mse" \
+#     --rl_cycle_steps 1 \
+#     --select_policy_by "epoch" \
+#     --template_pool configs/norl_template.yaml
+
+
+# python run.py \
+#     --taskName '[Pure]NSW2024To2025ElectricityPriceWithNews' \
+#     --time_col 'SETTLEMENTDATE'\
+#     --value_col 'RRP'\
+#     --unit "$/MWh" \
+#     --description "This dataset records the electricity price data in Australia NSW from 2024 to 2025, collected from National electricity market." \
+#     --region "Australia, NSW"\
+#     --train_file dataset/2024NSWelecprice/2024NSWelecprice_trainset.csv \
+#     --val_file dataset/2024NSWelecprice/2024NSWelecprice_valset.csv \
+#     --test_file dataset/2024NSWelecprice/2024NSWelecprice_testset.csv \
+#     --news_text_col 'summary_response' \
+#     --news_time_col 'date' \
+#     --keyword_path 'keywords/kws.txt' \
+#     --epochs 30\
+#     --keyword_number 20 \
+#     --news_window_days 7 \
+#     --news_topM 999 \
+#     --news_topK 999 \
+#     --batch_size 1\
+#     --rl_use 0 \
+#     --rl_algo "lints" \
+#     --reward_metric "mse" \
+#     --rl_cycle_steps 1 \
+#     --select_policy_by "epoch" \
+#     --template_pool configs/pure_template.yaml
+
+
+# python run.py \
+#     --taskName '[NoRL]NSW2024To2025ElectricityPriceWithNews' \
+#     --time_col 'SETTLEMENTDATE'\
+#     --value_col 'RRP'\
+#     --unit "$/MWh" \
+#     --description "This dataset records the electricity price data in Australia NSW from 2024 to 2025, collected from National electricity market." \
+#     --region "Australia, NSW"\
+#     --news_path dataset/Summarized_news_2024_2025.json \
+#     --train_file dataset/2024NSWelecprice/2024NSWelecprice_trainset.csv \
+#     --val_file dataset/2024NSWelecprice/2024NSWelecprice_valset.csv \
+#     --test_file dataset/2024NSWelecprice/2024NSWelecprice_testset.csv \
+#     --news_text_col 'summary_response' \
+#     --news_time_col 'date' \
+#     --keyword_path 'keywords/kws.txt' \
+#     --epochs 30\
+#     --keyword_number 20 \
+#     --news_window_days 7 \
+#     --news_topM 999 \
+#     --news_topK 999 \
+#     --batch_size 1\
+#     --rl_use 0 \
+#     --rl_algo "lints" \
+#     --reward_metric "mse" \
+#     --rl_cycle_steps 1 \
+#     --select_policy_by "epoch" \
+#     --template_pool configs/norl_template.yaml
+
+
+# ================== 15-20 ======================
+
+# python run.py \
+#     --taskName '[Pure]NSW2015To2020ElectricityPriceWithNews' \
+#     --time_col 'SETTLEMENTDATE'\
+#     --value_col 'RRP'\
+#     --unit "$/MWh" \
+#     --description "This dataset records the electricity price data in Australia NSW from 2015 to 2020, collected from National electricity market." \
+#     --region "Australia, NSW"\
+#     --dayFirst True \
+#     --train_file dataset/2015-2020NSWelecprice/2015To2020NSWData_trainset.csv \
+#     --val_file dataset/2015-2020NSWelecprice/2015To2020NSWData_valset.csv \
+#     --test_file dataset/2015-2020NSWelecprice/2015To2020NSWData_testset.csv \
+#     --news_text_col 'summary_response' \
+#     --news_time_col 'date' \
+#     --keyword_path 'keywords/kws.txt' \
+#     --epochs 30\
+#     --keyword_number 20 \
+#     --news_window_days 7 \
+#     --news_topM 999 \
+#     --news_topK 999 \
+#     --batch_size 1\
+#     --rl_use 0 \
+#     --rl_algo "lints" \
+#     --reward_metric "mae" \
+#     --rl_cycle_steps 1 \
+#     --select_policy_by "epoch" \
+#     --template_pool configs/pure_template.yaml
+
+
+# python run.py \
+#     --taskName '[NoRL]NSW2015To2020ElectricityPriceWithNews' \
+#     --time_col 'SETTLEMENTDATE'\
+#     --value_col 'RRP'\
+#     --unit "$/MWh" \
+#     --description "This dataset records the electricity price data in Australia NSW from 2015 to 2020, collected from National electricity market." \
+#     --region "Australia, NSW"\
+#     --news_path dataset/Summarized_news_2015_2020.json \
+#     --dayFirst True \
+#     --train_file dataset/2015-2020NSWelecprice/2015To2020NSWData_trainset.csv \
+#     --val_file dataset/2015-2020NSWelecprice/2015To2020NSWData_valset.csv \
+#     --test_file dataset/2015-2020NSWelecprice/2015To2020NSWData_testset.csv \
+#     --news_text_col 'summary_response' \
+#     --news_time_col 'date' \
+#     --keyword_path 'keywords/kws.txt' \
+#     --epochs 30\
+#     --keyword_number 20 \
+#     --news_window_days 7 \
+#     --news_topM 999 \
+#     --news_topK 999 \
+#     --batch_size 1\
+#     --rl_use 0 \
+#     --rl_algo "lints" \
+#     --reward_metric "mae" \
+#     --rl_cycle_steps 1 \
+#     --select_policy_by "epoch" \
+#     --template_pool configs/norl_template.yaml
+
+# ================== 15-16 ======================
+# python run.py \
+#     --taskName '[Pure]NSW2015To2016ElectricityPriceWithNews' \
 #     --time_col 'SETTLEMENTDATE'\
 #     --value_col 'RRP'\
 #     --unit "$/MWh" \
@@ -74,11 +189,93 @@ python run.py \
 #     --keyword_number 20 \
 #     --news_window_days 1 \
 #     --news_topM 999 \
-#     --news_topK 10 \
+#     --news_topK 999 \
+#     --batch_size 1\
+#     --rl_use 0 \
+#     --rl_algo "lints" \
+#     --reward_metric "mae" \
+#     --rl_cycle_steps 1 \
+#     --select_policy_by "epoch" \
+#     --template_pool configs/pure_template.yaml
+
+# python run.py \
+#     --taskName '[NoRL]NSW2015To2016ElectricityPriceWithNews' \
+#     --time_col 'SETTLEMENTDATE'\
+#     --value_col 'RRP'\
+#     --unit "$/MWh" \
+#     --description "This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market." \
+#     --region "Australia, NSW"\
+#     --news_path dataset/V0_Watt_Summarized_news_2015_2020.json \
+#     --dayFirst True \
+#     --train_file dataset/2015-2016NSWelecprice/2015To2016NSWData_trainset.csv \
+#     --val_file dataset/2015-2016NSWelecprice/2015To2016NSWData_valset.csv \
+#     --test_file dataset/2015-2016NSWelecprice/2015To2016NSWData_testset.csv \
+#     --news_text_col 'summary_response' \
+#     --news_time_col 'date' \
+#     --keyword_path 'keywords/kws.txt' \
+#     --epochs 30\
+#     --keyword_number 20 \
+#     --news_window_days 1 \
+#     --news_topM 999 \
+#     --news_topK 999 \
+#     --batch_size 1\
+#     --rl_use 0 \
+#     --rl_algo "lints" \
+#     --reward_metric "mae" \
+#     --rl_cycle_steps 1 \
+#     --select_policy_by "epoch" \
+#     --template_pool configs/norl_template.yaml
+    
+python run.py \
+    --taskName '[NoNews]NSW2015To2016ElectricityPriceWithNews' \
+    --time_col 'SETTLEMENTDATE'\
+    --value_col 'RRP'\
+    --unit "$/MWh" \
+    --description "This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market." \
+    --region "Australia, NSW"\
+    --dayFirst True \
+    --train_file dataset/2015-2016NSWelecprice/2015To2016NSWData_trainset.csv \
+    --val_file dataset/2015-2016NSWelecprice/2015To2016NSWData_valset.csv \
+    --test_file dataset/2015-2016NSWelecprice/2015To2016NSWData_testset.csv \
+    --news_text_col 'summary_response' \
+    --news_time_col 'date' \
+    --keyword_path 'keywords/kws.txt' \
+    --epochs 30\
+    --keyword_number 20 \
+    --news_window_days 1 \
+    --news_topM 999 \
+    --news_topK 999 \
+    --batch_size 1\
+    --rl_use 1 \
+    --rl_algo "lints" \
+    --reward_metric "mse" \
+    --rl_cycle_steps 1 \
+    --select_policy_by "epoch"
+
+# python run.py \
+#     --taskName 'NSW2015To2016ElectricityPriceWithNews' \
+#     --time_col 'SETTLEMENTDATE'\
+#     --value_col 'RRP'\
+#     --unit "$/MWh" \
+#     --description "This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market." \
+#     --region "Australia, NSW"\
+#     --news_path dataset/V0_Watt_Summarized_news_2015_2020.json \
+#     --dayFirst True \
+#     --train_file dataset/2015-2016NSWelecprice/2015To2016NSWData_trainset.csv \
+#     --val_file dataset/2015-2016NSWelecprice/2015To2016NSWData_valset.csv \
+#     --test_file dataset/2015-2016NSWelecprice/2015To2016NSWData_testset.csv \
+#     --news_text_col 'summary_response' \
+#     --news_time_col 'date' \
+#     --keyword_path 'keywords/kws.txt' \
+#     --epochs 30\
+#     --keyword_number 20 \
+#     --news_window_days 1 \
+#     --news_topM 999 \
+#     --news_topK 999 \
 #     --batch_size 1\
 #     --rl_use 1 \
 #     --rl_algo "lints" \
-#     --reward_metric "mse" \
+#     --reward_metric "mae" \
 #     --rl_cycle_steps 1 \
 #     --select_policy_by "epoch"
 
@@ -89,7 +286,7 @@ python run.py \
 #     --unit "$/MWh" \
 #     --description "This dataset records the electricity price data in Australia NSW from 2015 to 2016, collected from National electricity market." \
 #     --region "Australia, NSW"\
-#     --news_path dataset/Summarized_news_2015_2020.json \
+#     --news_path dataset/V0_Watt_RBA_15_16.json \
 #     --dayFirst True \
 #     --train_file dataset/2015-2016NSWelecprice/2015To2016NSWData_trainset.csv \
 #     --val_file dataset/2015-2016NSWelecprice/2015To2016NSWData_valset.csv \
@@ -101,10 +298,11 @@ python run.py \
 #     --keyword_number 20 \
 #     --news_window_days 1 \
 #     --news_topM 999 \
-#     --news_topK 10 \
+#     --news_topK 999 \
 #     --batch_size 1\
 #     --rl_use 1 \
 #     --rl_algo "lints" \
-#     --reward_metric "mse" \
+#     --reward_metric "mae" \
 #     --rl_cycle_steps 1 \
 #     --select_policy_by "epoch"
+
