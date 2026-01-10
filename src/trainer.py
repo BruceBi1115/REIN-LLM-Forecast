@@ -29,7 +29,7 @@ from .utils.logger import setup_live_logger
 from .RL.features import bandit_select, get_context_features, encode_instruction
 
 from .model import load_checkpoint, load_llama_lora, save_checkpoint
-from .residual_utils import freeze_module, zero_regressor_head, split_two_stage_epochs
+from .utils.residual_utils import freeze_module, zero_regressor_head, split_two_stage_epochs
 
 dataStatistic = DataStatistic()
 
